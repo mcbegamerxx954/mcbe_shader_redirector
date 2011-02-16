@@ -35,7 +35,7 @@ pub unsafe fn get_current_username() -> Option<String> {
 }
 
 #[no_mangle]
-extern "C" fn Java_com_mojang_minecraftpe_MainActivity_give_storage_path_to_rust(
+extern "C" fn Java_com_mojang_minecraftpe_MainActivity_giveExtStoragePath2rust(
     mut env: jni::JNIEnv,
     thiz: jni::objects::JClass,
     string: jni::objects::JString,

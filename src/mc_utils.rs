@@ -116,7 +116,9 @@ fn find_pack_folder(path: &str) -> Option<PathBuf> {
     let walker = walkdir::WalkDir::new(path);
     for entry in walker.into_iter().flatten() {
         if entry.file_name() == "manifest.json" {
-            return Some(entry.into_path());
+            let mut path = entry.into_path();
+            let _ = path.pop();
+            return Some(path);
         }
     }
     None
