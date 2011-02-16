@@ -22,7 +22,7 @@ backtrace = "0.3.71"
 thiserror = "1.0.61"
 ndk = { version = "0.9.0", default-features = false }
 walkdir = { version = "2.5.0", default-features = false }
-libmaterial = { version = "0.1.0", git = "https://github.com/mcbegamerxx954/materialbin" }
+materialbin = { version = "0.1.1", git = "https://github.com/mcbegamerxx954/materialbin" }
 scroll = "0.12.0"
 jni = "0.21.1"
 

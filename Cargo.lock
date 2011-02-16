@@ -260,20 +260,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
 
 [[package]]
-name = "libmaterial"
-version = "0.1.0"
-source = "git+https://github.com/mcbegamerxx954/materialbin#f849802cc11e5100663d24dc575df18226dc0c3c"
-dependencies = [
- "byteorder",
- "scroll",
- "thiserror",
-]
-
-[[package]]
 name = "log"
 version = "0.4.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90ed8c1e510134f979dbc4f070f87d4313098b704861a105fe34231c70a3901c"
+
+[[package]]
+name = "materialbin"
+version = "0.1.1"
+source = "git+https://github.com/mcbegamerxx954/materialbin#3513909409226c9804975289875c24dd3d29b272"
+dependencies = [
+ "byteorder",
+ "indexmap",
+ "scroll",
+]
 
 [[package]]
 name = "mcbe_r"
@@ -285,8 +285,8 @@ dependencies = [
  "ctor",
  "jni",
  "libc",
- "libmaterial",
  "log",
+ "materialbin",
  "ndk",
  "ndk-sys",
  "notify",

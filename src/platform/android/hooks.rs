@@ -1,6 +1,6 @@
 use crate::SHADER_PATHS;
 use libc::{off64_t, off_t};
-use libmaterial::{CompiledMaterialDefinition, MinecraftVersion};
+use materialbin::{CompiledMaterialDefinition, MinecraftVersion};
 use ndk_sys::{AAsset, AAssetManager};
 
 use once_cell::sync::Lazy;
