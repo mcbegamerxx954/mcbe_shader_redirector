@@ -37,6 +37,12 @@ for now it only supports **Android** and also **ChromeOS**.
 > ```smali
 > const-string v0, "mcbe_r"
 > invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+> invoke-virtual {p0}, Lcom/mojang/minecraftpe/MainActivity;->dracoSetupStorage()V
+> ```
+> + Then just before the function add this: 
+> ```smali
+> .method public native dracoSetupStorage()V
+> .end method
 > ```
 > ![image](https://github.com/mcbegamerxx954/mcbe_shader_redirector/assets/40156662/10606e03-4d63-4533-89f3-b8a392cd5ef1)<br>
 > ![image](https://github.com/mcbegamerxx954/mcbe_shader_redirector/assets/40156662/5b9ab661-c54f-4982-9baf-4ad4b3006a4b)<br>
