@@ -69,7 +69,11 @@ impl DataManager {
         let mut final_paths = HashMap::new();
         for pack in global_packs {
             if let Some(vp) = find_valid_pack(&pack, &self.valid_packs) {
-                let mut paths = match scan_pack(&vp.path, pack.subpack) {
+                let Some(path) = find_pack_folder(&vp.path) else {
+                    log::warn!("Path does not have a pack folder anywhere: {}", &vp.path);
+                    continue;
+                };
+                let mut paths = match scan_pack(&path, pack.subpack) {
                     Ok(paths) => paths,
                     Err(e) => {
                         log::error!("Path scanning error: {e}");
@@ -107,8 +111,23 @@ fn process_version_array(version: &Vec<u32>) -> String {
     let _ = version_str.pop();
     version_str
 }
-fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, PathBuf>, io::Error> {
-    log::trace!("Scanning path: {}", path);
+// This is rare, but can happen
+fn find_pack_folder(path: &str) -> Option<PathBuf> {
+    let walker = walkdir::WalkDir::new(path);
+    for entry in walker.into_iter().flatten() {
+        if entry.file_name() == "manifest.json" {
+            let mut path = entry.into_path();
+            let _ = path.pop();
+            return Some(path);
+        }
+    }
+    None
+}
+fn scan_pack(
+    path: &Path,
+    subpack: Option<String>,
+) -> Result<HashMap<OsString, PathBuf>, io::Error> {
+    log::trace!("Scanning path: {}", path.display());
     let mut found_paths = HashMap::new();
     let mut main_path = Path::new(path).join("renderer");
     main_path.push("materials");

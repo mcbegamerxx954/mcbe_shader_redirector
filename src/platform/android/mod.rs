@@ -6,8 +6,15 @@ use super::errors::HookError;
 use libc::c_void;
 use plt_rs::{collect_modules, DynamicLibrary, DynamicSymbols};
 use std::ffi::CStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::{fs, mem, ptr};
+#[derive(Debug)]
+struct JniPaths {
+    internal_path: String,
+    external_path: String,
+}
+static JNI_PATHS: OnceLock<JniPaths> = OnceLock::new();
 pub unsafe fn get_current_username() -> Option<String> {
     let amt = match libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) {
         n if n < 0 => 512_usize,
@@ -30,6 +37,33 @@ pub unsafe fn get_current_username() -> Option<String> {
         }
         _ => None,
     }
+}
+
+#[no_mangle]
+extern "C" fn Java_com_mojang_minecraftpe_MainActivity_dracoSetupStorage(
+    mut env: jni::JNIEnv,
+    thiz: jni::objects::JObject,
+) {
+    let external_path = get_string_from_fn(&mut env, &thiz, "getExternalStoragePath");
+    let internal_path = get_string_from_fn(&mut env, &thiz, "getInternalStoragePath");
+    let paths = JniPaths {
+        internal_path,
+        external_path,
+    };
+    JNI_PATHS.set(paths).unwrap();
+}
+fn get_string_from_fn(
+    env: &mut jni::JNIEnv,
+    instance: &jni::objects::JObject,
+    fn_name: &str,
+) -> String {
+    let jstring = env
+        .call_method(instance, fn_name, "()Ljava/lang/String;", &[])
+        .unwrap()
+        .l()
+        .unwrap();
+    let path_str = env.get_string(jstring.as_ref().into()).unwrap();
+    path_str.to_str().unwrap().to_owned()
 }
 pub fn get_storage_location(options_path: &Path) -> Option<StorageLocation> {
     let int = match parse_storage_location(options_path) {
@@ -60,12 +94,21 @@ pub fn get_storage_path(location: StorageLocation) -> std::path::PathBuf {
     let userid = parse_current_aid(username).unwrap();
     log::info!("User id: {userid}");
     let pkgtrim = pkgname.trim_matches(char::from(0));
-    let result = match location {
-        StorageLocation::Internal => format!("/data/user/{userid}/") + pkgtrim,
+
+    let mut result = match location {
+        StorageLocation::Internal => format!("/data/user/{userid}/{pkgtrim}"),
         StorageLocation::External => {
-            format!("/storage/emulated/{}", userid) + "/Android/data/" + pkgtrim + "/files/"
+            format!("/storage/emulated/{userid}/Android/data/{pkgtrim}/files/")
         }
     };
+    if let Some(paths) = JNI_PATHS.get() {
+        result = match location {
+            StorageLocation::Internal => paths.internal_path.to_owned(),
+            StorageLocation::External => paths.external_path.to_owned(),
+        };
+        log::info!("Got jni paths");
+        log::info!("path for {location:#?}: {}", &result);
+    }
     result.into()
 }
 

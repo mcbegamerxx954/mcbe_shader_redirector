@@ -99,7 +99,7 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
             Ok(data) => data,
             Err(e) => {
                 log::error!("[{version}] parsing error: {e}");
-               continue;
+                continue;
             }
         };
         log::info!("[{version}]: Parsing had no errors");

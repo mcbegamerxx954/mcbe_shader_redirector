@@ -37,10 +37,6 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
                 continue;
             }
         };
-        if event.kind != EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-            log::info!("Skipping event..");
-            continue;
-        }
         log::info!("Recieved interesting event: {:#?}", event);
         let Some(file_name) = event.paths.first().and_then(|p| p.file_name()) else {
             log::warn!("Event path is empty or with no filename");
