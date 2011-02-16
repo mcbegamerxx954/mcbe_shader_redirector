@@ -94,7 +94,7 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
         get_latest_mcver(manager).unwrap()
     });
     log::warn!("Minecraft version: {mcver}");
-    for version in libmaterial::ALL_VERSIONS {
+    for version in materialbin::ALL_VERSIONS {
         let material: CompiledMaterialDefinition = match data.pread_with(0, version) {
             Ok(data) => data,
             Err(e) => {
