@@ -224,6 +224,7 @@ checksum = "97b3888a4aecf77e811145cadf6eef5901f4782c53886191b2f693f24761847c"
 [[package]]
 name = "libmaterial"
 version = "0.1.0"
+source = "git+https://github.com/mcbegamerxx954/materialbin#f849802cc11e5100663d24dc575df18226dc0c3c"
 dependencies = [
  "byteorder",
  "scroll",
