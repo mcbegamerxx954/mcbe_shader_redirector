@@ -1,15 +1,17 @@
 use crate::SHADER_PATHS;
 use libc::{off64_t, off_t};
+use libmaterial::{CompiledMaterialDefinition, MinecraftVersion};
 use ndk_sys::{AAsset, AAssetManager};
 
 use once_cell::sync::Lazy;
+use scroll::Pread;
 use std::{
     collections::HashMap,
-    ffi::{CStr, OsStr},
+    ffi::{CStr, CString, OsStr},
     io::{self, Cursor, Read, Seek},
     os::unix::ffi::OsStrExt,
     path::Path,
-    sync::Mutex,
+    sync::{Mutex, OnceLock},
 };
 
 // This makes me feel wrong... but all we will do is compare the pointer
@@ -21,10 +23,29 @@ unsafe impl Send for AAssetPtr {}
 // the assets we want to intercept access to
 static WANTED_ASSETS: Lazy<Mutex<HashMap<AAssetPtr, Cursor<Vec<u8>>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
+static MC_VERSION: OnceLock<MinecraftVersion> = OnceLock::new();
 
 // This is unsafe because it calls stuff that can give us some nasty UB
 // But we let ub happen because honestly this is a hook
-
+fn get_latest_mcver(amanager: ndk::asset::AssetManager) -> Option<MinecraftVersion> {
+    // This is kinda complicated but its simple
+    let versions = [
+        MinecraftVersion::V1_18_30,
+        MinecraftVersion::V1_19_60,
+        MinecraftVersion::V1_20_80,
+    ];
+    let android_prefix = "assets/resource_packs/vanilla_";
+    let mut apk_version = None;
+    // Since this does not stop after finding one, it will replace it with the
+    // latest one if it exists
+    for version in versions {
+        let path = format!("{android_prefix}{version}/");
+        if amanager.open_dir(&CString::new(path).unwrap()).is_some() {
+            apk_version = Some(version);
+        }
+    }
+    apk_version
+}
 pub(crate) unsafe fn asset_open(
     man: *mut AAssetManager,
     fname: *const libc::c_char,
@@ -52,7 +73,10 @@ pub(crate) unsafe fn asset_open(
         return aasset;
     };
     let file = match std::fs::read(path) {
-        Ok(file) => Cursor::new(file),
+        Ok(file) => Cursor::new(match process_material(man, &file) {
+            Some(updated) => updated,
+            None => file,
+        }),
         Err(e) => {
             log::warn!("Cant open path {path:#?}: {e}");
             return aasset;
@@ -63,7 +87,32 @@ pub(crate) unsafe fn asset_open(
 
     aasset
 }
-
+fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
+    let mcver = MC_VERSION.get_or_init(|| {
+        let pointer = std::ptr::NonNull::new(man).unwrap();
+        let manager = unsafe { ndk::asset::AssetManager::from_ptr(pointer) };
+        get_latest_mcver(manager).unwrap()
+    });
+    log::warn!("Minecraft version: {mcver}");
+    for version in libmaterial::ALL_VERSIONS {
+        let material: CompiledMaterialDefinition = match data.pread_with(0, version) {
+            Ok(data) => data,
+            Err(e) => {
+                log::error!("[{version}] parsing error: {e}");
+               continue;
+            }
+        };
+        log::info!("[{version}]: Parsing had no errors");
+        let mut output = Vec::with_capacity(data.len());
+        if let Err(e) = material.write(&mut output, *mcver) {
+            log::error!("Writing failed: {e}");
+            return None;
+        }
+        return Some(output);
+    }
+    log::error!("Cant update the shader");
+    None
+}
 pub(crate) unsafe fn asset_seek64(
     aasset: *mut AAsset,
     off: off64_t,
