@@ -1,10 +1,7 @@
-cargo-features = ["trim-paths"]
+
 [workspace]
 members = ["hooks", "mc_rpfs", "plt-rs"]
 resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [patch.crates-io]
 plt-rs = { path = "plt-rs"}
-
-[profile.release]
-trim-paths = true
