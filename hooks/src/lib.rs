@@ -1,15 +1,12 @@
 mod android;
 use android::{aasset_hook, fopen_hook, watch_jsons};
 use app_dirs2::{app_dir, AppDataType, AppInfo};
-use core::panic;
-use jni::sys::{jint, JNINativeMethod, JNI_VERSION_1_6};
+use jni::sys::{jint, JNI_VERSION_1_6};
 use jni::{objects::JObject, JNIEnv, JavaVM};
-use libc::c_void;
 use ndk_sys::AAssetManager;
 use plt_rs::{LinkMapView, MutableLinkMap};
 use std::panic::set_hook;
-use std::path::PathBuf;
-use std::thread::{self, Thread};
+use std::thread;
 const MC_APP_INFO: AppInfo = AppInfo {
     name: "minecraftpe",
     author: "mojang",
@@ -35,7 +32,7 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut libc::c_void) -> jint {
         android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
     );
     log::info!("got called");
-    let mut env = vm.get_env().expect("Expected java env");
+    let env = vm.get_env().expect("Expected java env");
     let context = get_global_context(env);
     log::info!("got global context");
     unsafe {
@@ -45,7 +42,7 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut libc::c_void) -> jint {
         )
     };
     log::info!("Starting.....");
-    let handler = thread::spawn(|| startup());
+    let _handler = thread::spawn(startup);
     JNI_VERSION_1_6
 }
 
@@ -79,7 +76,7 @@ fn get_global_context(mut env: JNIEnv) -> JObject {
 pub fn startup() {
     log::info!("We are initialized");
     let mut mutable_link_map = get_mut_map();
-    let aaset_orig =
+    let _aaset_orig =
         mutable_link_map
             .hook::<unsafe fn(
                 *mut AAssetManager,
@@ -89,7 +86,7 @@ pub fn startup() {
             .unwrap()
             .unwrap();
     let mut mutable_link_map = get_mut_map();
-    let fopen_orig = mutable_link_map
+    let _fopen_orig = mutable_link_map
         .hook::<unsafe fn(*const libc::c_char, *const libc::c_char) -> *mut libc::FILE>(
             "fopen",
             fopen_hook as *const _,
@@ -108,16 +105,14 @@ pub fn startup() {
         let env = vm.get_env().unwrap();
         if env.exception_check().unwrap() {
             env.exception_describe().unwrap();
-            panic!();
         }
     }
-    //let app_dir_ptsd = PathBuf::from(ipath);
-    let handler = thread::spawn(|| {
+    let mut app_dir = app_dir.expect("Expected app_dir");
+    let _handler = thread::spawn(|| {
         set_hook(Box::new(|_| {
             log::error!("ok i die");
         }));
         log::info!("Hello from thread");
-        let mut app_dir = app_dir.expect("app_dirs is err");
         let _ = app_dir.pop();
         let _ = app_dir.pop();
         app_dir.push("games/com.mojang/minecraftpe");

@@ -3,7 +3,6 @@ use notify::event::{AccessKind, AccessMode, EventKind};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use once_cell::sync::Lazy;
 use std::ffi::{CStr, CString, OsStr};
-use std::fs;
 use std::ops::Deref;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -81,14 +80,13 @@ pub(crate) fn watch_jsons(app_dir: PathBuf) {
         panic!("Watch failed: {}", e);
     };
 
-    let shader_paths = SHADER_PATHS.clone();
     for event in reciever {
-        if event.is_err() {
-            log::info!("event is an error, skipping..");
-        }
-        let mut event = match event {
+        let event = match event {
             Ok(event) => event,
-            Err(_) => continue,
+            Err(_) => {
+                log::info!("Event is err, skipping");
+                continue;
+            }
         };
         if event.kind != EventKind::Access(AccessKind::Close(AccessMode::Write)) {
             log::info!("Skipping event..");
@@ -96,27 +94,25 @@ pub(crate) fn watch_jsons(app_dir: PathBuf) {
         }
         log::info!("Recieved interesting event: {:#?}", event);
         let file_name = event.paths[0].file_name().unwrap();
-        /*        if file_name == "option.txt" {
-            let options_file = fs::read_to_string(event.paths[0]).unwrap();
-            let options = serde_yaml::from_str(&options_file).unwrap();
-            let storage_type = options.get("dvce_filestoragelocation").unwrap();
-            let storage_type = storage_type.as_u32().unwrap();
-        }
-            */
         if file_name == "global_resource_packs.json" {
             log::info!("Grp changed, updating..");
-            let mut sp_mut = shader_paths.lock().unwrap();
-            let updated_sp = dataman.shader_paths().unwrap();
-            *sp_mut = updated_sp;
-            log::info!("sp_shared is :{:#?}", sp_mut);
+            update_global_sp(&mut dataman, false);
         }
         if file_name == "valid_known_packs.json" {
-            log::info!("Vpk changed, updating it with globalpaths...");
-            dataman.update_validpacks().unwrap();
-            let shader_packs = dataman.shader_paths().unwrap();
-            let mut sp_global = shader_paths.lock().unwrap();
-            *sp_global = shader_packs;
-            log::info!("sp_shared is :{:#?}", sp_global);
+            log::info!("Vpk changed, full updating..");
+            update_global_sp(&mut dataman, true);
         }
     }
+}
+pub(crate) fn update_global_sp(dataman: &mut DataManager, full: bool) {
+    if full {
+        dataman
+            .update_validpacks()
+            .expect("Cant update valid packs");
+    }
+    let data = dataman.shader_paths().expect("Cant update shader_paths");
+    let owned_sp = SHADER_PATHS.clone();
+    let mut locked_sp = owned_sp.lock().expect("Mutex got poisoned!");
+    *locked_sp = data;
+    log::info!("Updated global shader paths: {:#?}", &locked_sp);
 }
