@@ -1,5 +1,11 @@
+# Ok i can explain
+So i kind of vendored this crate so that i could patch,
+to add searching by lib on android, this crate is NOT MINE, 
+the github user that made this is (OhChase)[https://github.com/ohchase/plt-rs]
 
-# PLT-RS By OhChase
+# Now after this is the original readme
+
+# PLT-RS By (OhChase)[https://github.com/ohchase/plt-rs]
 Get in losers we are hooking the procedural linkage tables
 
 ## Derivatives
