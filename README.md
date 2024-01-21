@@ -4,7 +4,7 @@ for now it only supports android
 
 the tutorial is not 100% guaranteed to work yet and the APK might crash on some phones.
 
-## How to build:
+## How to build(pc):
 + Install rust using [rustup](https://rustup.rs/) if you dont have it 
 + Download the ndk
 + Add android target using "rustup target add"
@@ -12,6 +12,15 @@ the tutorial is not 100% guaranteed to work yet and the APK might crash on some 
 + cd to this repo and do "cargo build --release --target your-android-target"
 + Search for your .so in target folder
 + Now you have it
+
+## How to build(android)
++ Install termux if you dont have it
++ Update packages using "pkg upg"
++ Install essential stuff for building using "pkg install build-essential"
++ Install rust using "pkg install rust"
++ git clone this repo
++ do "cargo build --release" on where the repo is
++ Now you should have your lib in target folder in repo dir
 
 ## Tutorial on how to use:
 step 1: get the .so for your arch and rename it to "libmcbe_r.so"
