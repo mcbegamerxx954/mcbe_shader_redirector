@@ -1,8 +1,17 @@
-## info
+# MCBER
 This crate is made to redirect MCBE shaders to ones from resource packs externally so that it can work with any mcbe version and even multiple platforms.
 for now it only supports android
 
 the tutorial is not 100% guaranteed to work yet and the APK might crash on some phones.
+
+## How to build:
++ Install rust using [rustup](https://rustup.rs/) if you dont have it 
++ Download the ndk
++ Add android target using "rustup target add"
++ Setup rust to use the ndk depending on your platform
++ cd to this repo and do "cargo build --release --target your-android-target"
++ Search for your .so in target folder
++ Now you have it
 
 ## Tutorial on how to use:
 step 1: get the .so for your arch and rename it to "libmcbe_r.so"
