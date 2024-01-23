@@ -3,26 +3,6 @@
 version = 3
 
 [[package]]
-name = "android_impl"
-version = "0.1.0"
-dependencies = [
- "android_logger",
- "app_dirs2",
- "crossbeam-channel",
- "ctor",
- "jni",
- "libc",
- "log",
- "mc_rpfs",
- "ndk-context",
- "ndk-sys",
- "notify",
- "once_cell",
- "plt-rs",
- "serde_yaml",
-]
-
-[[package]]
 name = "android_log-sys"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -106,16 +86,6 @@ name = "crossbeam-utils"
 version = "0.8.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "248e3bacc7dc6baa3b21e405ee045c3047101a49145e7e9eca583ab4c2ca5345"
-
-[[package]]
-name = "ctor"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30d2b3721e861707777e3195b0158f950ae6dc4a27e4d02ff9f67e3eb3de199e"
-dependencies = [
- "quote",
- "syn",
-]
 
 [[package]]
 name = "env_logger"
@@ -258,8 +228,25 @@ dependencies = [
  "notify",
  "serde",
  "serde_json",
- "serde_yaml",
  "thiserror",
+]
+
+[[package]]
+name = "mcbe_r"
+version = "0.1.0"
+dependencies = [
+ "android_logger",
+ "app_dirs2",
+ "crossbeam-channel",
+ "jni",
+ "libc",
+ "log",
+ "mc_rpfs",
+ "ndk-context",
+ "ndk-sys",
+ "notify",
+ "once_cell",
+ "plt-rs",
 ]
 
 [[package]]
@@ -403,19 +390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_yaml"
-version = "0.9.30"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1bf28c79a99f70ee1f1d83d10c875d2e70618417fda01ad1785e027579d9d38"
-dependencies = [
- "indexmap",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
-]
-
-[[package]]
 name = "syn"
 version = "2.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -451,12 +425,6 @@ name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
-
-[[package]]
-name = "unsafe-libyaml"
-version = "0.2.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab4c90930b95a82d00dc9e9ac071b4991924390d46cbd0dfe566148667605e4b"
 
 [[package]]
 name = "walkdir"

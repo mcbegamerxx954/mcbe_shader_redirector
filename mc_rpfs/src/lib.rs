@@ -1,5 +1,7 @@
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use std::collections::HashMap;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 use thiserror::Error;
@@ -24,6 +26,7 @@ pub struct ValidPack {
 #[derive(Deserialize, Debug)]
 struct GlobalPack {
     pack_id: String,
+    subpack: Option<String>,
 }
 
 #[derive(Error, Debug)]
@@ -60,54 +63,60 @@ impl DataManager {
     }
 
     // Get a list of shader paths
-    pub fn shader_paths(&self) -> Result<Vec<PathBuf>, Error> {
+    pub fn shader_paths(&self) -> Result<HashMap<OsString, PathBuf>, Error> {
         let global_packs: Vec<GlobalPack> = vec_from_json(&self.global_packs_path)?;
         log::info!("global_packs parsed: {:#?}", global_packs);
-        let mut paths_to_check = Vec::new();
-        // we get paths from the valid_paths
-        // TODO: Im sure we can be terser
-        for gp in global_packs {
-            if let Some(valid_pack) = &self.valid_packs.iter().find(|vp| vp.uuid == gp.pack_id) {
-                log::info!("Found path to global pack: {}", valid_pack.path);
-                paths_to_check.push(valid_pack.path.clone());
+        let mut final_paths = HashMap::new();
+        for pack in global_packs {
+            if let Some(vp) = self.valid_packs.iter().find(|vp| pack.pack_id == vp.uuid) {
+                let mut paths = match scan_pack(&vp.path, pack.subpack) {
+                    Some(paths) => paths,
+                    None => continue,
+                };
+                log::info!("scan pack paths : {:#?}", &paths);
+                let filt_paths: HashMap<OsString, PathBuf> = paths
+                    .drain()
+                    .filter(|(k, _)| !final_paths.contains_key(k))
+                    .collect();
+                log::info!("fil paths is :{:#?}", &filt_paths);
+                final_paths.extend(filt_paths);
             }
         }
-        // we get all dirs which have shaders
-        // TODO: Improve this to be more efficient
-        let shader_dirs = self.scan_paths(paths_to_check);
 
-        Ok(shader_dirs)
+        Ok(final_paths)
     }
     // Get shaders in pack directory
-    pub(crate) fn scan_paths(&self, pack_paths: Vec<String>) -> Vec<PathBuf> {
-        // The fact that it failed means that its probably not worth searching
-        let mut seen_filenames = Vec::new();
-        let mut shader_paths = Vec::new();
-        for pack_path in pack_paths {
-            let dir_entries = match fs::read_dir(pack_path + "/renderer/materials/") {
-                Ok(dir_entries) => dir_entries,
-                Err(_) => continue,
-            };
-            let mut file_paths: Vec<PathBuf> = Vec::new();
-            for entry in dir_entries.flatten() {
-                let path = entry.path();
-                log::info!("investigating path:{:#?}", &path);
-                let file_name = entry.file_name();
-                if seen_filenames.contains(&file_name) {
-                    log::info!("we already have shader: {:?}", &file_name);
-                    continue;
-                }
-                let fp_bytes = file_name.as_encoded_bytes();
-                if fp_bytes.ends_with(b"material.bin") {
-                    log::info!("Found shader, pushing path: {:#?}", &path);
-                    seen_filenames.push(file_name);
-                    file_paths.push(path);
-                }
-            }
-            shader_paths.extend(file_paths);
-        }
-        shader_paths
+}
+fn scan_pack(path: &str, subpack: Option<String>) -> Option<HashMap<OsString, PathBuf>> {
+    let path = Path::new(path);
+    let mut pack_files = match scan_path(path) {
+        Ok(paths) => paths,
+        Err(_) => return None,
+    };
+    if let Some(subpack) = subpack {
+        let subpath = path.join("subpacks/").join(subpack);
+        let sub_files = match scan_path(&subpath) {
+            Ok(subpaths) => subpaths,
+            Err(_) => return None,
+        };
+        log::info!("expanding pack files with :{:#?}", &sub_files);
+        pack_files.extend(sub_files);
     }
+    Some(pack_files)
+}
+fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
+    let dir_entries = fs::read_dir(&path.join("renderer/materials"))?;
+    let mut paths: HashMap<OsString, PathBuf> = HashMap::new();
+    for entry in dir_entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name();
+        let bytes = file_name.as_encoded_bytes();
+        if !paths.contains_key(&file_name) && bytes.ends_with(b".material.bin") {
+            log::info!("scan_path found a valid shader path!: {:#?}", &path);
+            paths.insert(file_name, path);
+        }
+    }
+    Ok(paths)
 }
 
 pub(crate) fn vec_from_json<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, Error> {
