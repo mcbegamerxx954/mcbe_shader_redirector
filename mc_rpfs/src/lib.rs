@@ -94,7 +94,8 @@ fn scan_pack(path: &str, subpack: Option<String>) -> Option<HashMap<OsString, Pa
         Err(_) => return None,
     };
     if let Some(subpack) = subpack {
-        let subpath = path.join("subpacks/").join(subpack);
+        let mut subpath = path.join("subpacks");
+	subpath.push(subpack);
         let sub_files = match scan_path(&subpath) {
             Ok(subpaths) => subpaths,
             Err(_) => return None,
@@ -105,7 +106,9 @@ fn scan_pack(path: &str, subpack: Option<String>) -> Option<HashMap<OsString, Pa
     Some(pack_files)
 }
 fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
-    let dir_entries = fs::read_dir(&path.join("renderer/materials"))?;
+    let mut path = path.join("renderer");
+    path.push("materials");
+    let dir_entries = fs::read_dir(path)?;
     let mut paths: HashMap<OsString, PathBuf> = HashMap::new();
     for entry in dir_entries.flatten() {
         let path = entry.path();
