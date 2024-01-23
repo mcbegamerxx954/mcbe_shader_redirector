@@ -2,73 +2,69 @@ use mc_rpfs::DataManager;
 use notify::event::{AccessKind, AccessMode, EventKind};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use once_cell::sync::Lazy;
-use std::ffi::{CStr, CString, OsStr};
+use std::collections::HashMap;
+use std::ffi::{CStr, CString, OsStr, OsString};
 use std::ops::Deref;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 // This is fucking disgusting
-static SHADER_PATHS: Lazy<Arc<Mutex<Vec<PathBuf>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
+static SHADER_PATHS: Lazy<Arc<Mutex<HashMap<OsString, PathBuf>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 #[inline(never)]
 pub(crate) unsafe extern "C" fn aasset_hook(
-    manager: *mut ndk_sys::AAssetManager,
+    man: *mut ndk_sys::AAssetManager,
     filename: *const libc::c_char,
     mode: libc::c_int,
 ) -> *mut ndk_sys::AAsset {
-    // SAFETY: The hook blocks the thread calling it
-    // So the data should not change
-    let file_name = CStr::from_ptr(filename);
-    log::info!("Hook ran with filename: {:#?}", file_name);
-    let os_filename = OsStr::from_bytes(file_name.to_bytes());
-    let file_path: &Path = os_filename.as_ref();
-    if !os_filename.as_bytes().ends_with(b".material.bin") {
-        return unsafe { ndk_sys::AAssetManager_open(manager, filename, mode) };
-    }
-    log::info!("Interesting filepath: {:#?}", file_path);
-    // Now we lock global shader_paths since we verified that we want to use it
-    let global_sp = SHADER_PATHS.clone();
-    let shader_paths = global_sp.lock().unwrap();
-    let shader_paths = shader_paths.deref();
-    for path in shader_paths {
-        if file_path.file_name().unwrap() == path.file_name().unwrap() {
-            let c_str = CString::new(path.as_os_str().as_bytes()).unwrap();
-            log::info!("Successful intercept: {:#?}", c_str);
-            return unsafe { ndk_sys::AAssetManager_open(manager, c_str.as_ptr(), mode) };
+    let c_str = CStr::from_ptr(filename);
+    match find_replacement(c_str) {
+        Some(rep_path) => {
+            log::info!("aasset intercepted with path: {:#?}", &rep_path);
+            ndk_sys::AAssetManager_open(man, rep_path.as_ptr().cast(), mode)
+        }
+        None => {
+            log::info!("didnt intercept aasset path: {:#?}", c_str);
+            ndk_sys::AAssetManager_open(man, filename, mode)
         }
     }
-    log::info!("didnt find filepath in replace list {:#?}", file_path);
-    unsafe { ndk_sys::AAssetManager_open(manager, filename, mode) }
 }
 
 pub(crate) unsafe extern "C" fn fopen_hook(
     filename: *const libc::c_char,
     mode: *const libc::c_char,
 ) -> *mut libc::FILE {
-    // SAFETY: The hook blocks the thread calling it
-    // So the data should not change
-    let file_name = CStr::from_ptr(filename);
-    log::info!("Hook ran with filename: {:#?}", file_name);
-    let os_filename = OsStr::from_bytes(file_name.to_bytes());
-    let file_path: &Path = os_filename.as_ref();
-    if !os_filename.as_bytes().ends_with(b".material.bin") {
-        return unsafe { libc::fopen(filename, mode) };
-    }
-    log::info!("Interesting filepath: {:#?}", file_path);
-    // Now we lock global shader_paths since we verified that we want to use it
-    let global_sp = SHADER_PATHS.clone();
-    let shader_paths = global_sp.lock().unwrap();
-    let shader_paths = shader_paths.deref();
-    for path in shader_paths {
-        if file_path.file_name().unwrap() == path.file_name().unwrap() {
-            let c_str = CString::new(path.as_os_str().as_bytes()).unwrap();
-            log::info!("Successful intercept: {:#?}", c_str);
-            return unsafe { libc::fopen(c_str.as_ptr(), mode) };
+    let c_str = CStr::from_ptr(filename);
+    match find_replacement(c_str) {
+        Some(rep_path) => {
+            log::info!("fopen intercepted with path: {:#?}", &rep_path);
+            libc::fopen(rep_path.as_ptr().cast(), mode)
+        }
+        None => {
+            log::info!("didnt intercept fopen path: {:#?}", c_str);
+            libc::fopen(filename, mode)
         }
     }
-    log::info!("didnt find filepath in replace list {:#?}", file_path);
-    unsafe { libc::fopen(filename, mode) }
+}
+fn find_replacement(raw_path: &CStr) -> Option<CString> {
+    // I want to check this later for correctness
+    let raw_bytes = raw_path.to_bytes();
+    if !raw_bytes.ends_with(b".material.bin") {
+        return None;
+    }
+    let os_str = OsStr::from_bytes(raw_bytes);
+    let path = Path::new(os_str);
+    let filename = path.file_name()?;
+    let sp_handle = SHADER_PATHS.clone();
+    let sp_owned = sp_handle.lock().unwrap();
+    if sp_owned.contains_key(filename) {
+        let new_path = sp_owned.get(filename)?;
+        let result = CString::new(new_path.to_str()?).expect("Non utf in sp (this is a bug)");
+
+        return Some(result);
+    }
+    None
 }
 
 pub(crate) fn watch_jsons(app_dir: PathBuf) {
