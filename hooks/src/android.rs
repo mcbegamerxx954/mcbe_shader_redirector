@@ -1,17 +1,15 @@
 use mc_rpfs::DataManager;
 use notify::event::{AccessKind, AccessMode, EventKind};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use std::os::unix::ffi::OsStrExt;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, OsStr, OsString};
-use std::ops::Deref;
-use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
-// A RwLock should be fatser since shader reads
-// tend to happen AFTER we update it
-static SHADER_PATHS: Lazy<RwLock<HashMap<OsString, PathBuf>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+use std::sync::Mutex;
+// Nvm RwLock is slower 
+static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[inline(never)]
 pub(crate) unsafe extern "C" fn aasset_hook(
@@ -57,7 +55,7 @@ fn find_replacement(raw_path: &CStr) -> Option<CString> {
     let os_str = OsStr::from_bytes(raw_bytes);
     let path = Path::new(os_str);
     let filename = path.file_name()?;
-    let sp_owned = SHADER_PATHS.read().expect("RwLock got poisoned!");
+    let sp_owned = SHADER_PATHS.lock().expect("RwLock got poisoned!");
     if sp_owned.contains_key(filename) {
         let new_path = sp_owned.get(filename)?;
         let result = CString::new(new_path.to_str()?).expect("Non utf in sp (this is a bug)");
@@ -107,7 +105,7 @@ pub(crate) fn update_global_sp(dataman: &mut DataManager, full: bool) {
             .expect("Cant update valid packs");
     }
     let data = dataman.shader_paths().expect("Cant update shader_paths");
-    let mut locked_sp = SHADER_PATHS.write().expect("RwLock got poisoned!");
+    let mut locked_sp = SHADER_PATHS.lock().expect("RwLock got poisoned!");
     *locked_sp = data;
     log::info!("Updated global shader paths: {:#?}", &locked_sp);
 }
