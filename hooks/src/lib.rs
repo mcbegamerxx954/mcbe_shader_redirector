@@ -1,5 +1,7 @@
 mod android;
-use android::{aasset_hook, fopen_hook, watch_jsons};
+mod common;
+mod mc_utils;
+use android::{aasset_hook, cxx_fopen_hook, fopen_hook, watch_jsons};
 use app_dirs2::{app_dir, AppDataType, AppInfo};
 use jni::sys::{jint, JNI_VERSION_1_6};
 use jni::{objects::JObject, JNIEnv, JavaVM};
@@ -12,8 +14,8 @@ const MC_APP_INFO: AppInfo = AppInfo {
     author: "mojang",
 };
 
-fn get_mut_map<'a>() -> MutableLinkMap<'a> {
-    let link_map = LinkMapView::from_dynamic_library("libminecraftpe.so").expect("open link map");
+fn get_mut_map<'a>(libname: &str) -> MutableLinkMap<'a> {
+    let link_map = LinkMapView::from_dynamic_library(libname).expect("open link map");
 
     MutableLinkMap::from_view(link_map)
 }
@@ -75,17 +77,21 @@ fn get_global_context(mut env: JNIEnv) -> JObject {
 
 pub fn startup() {
     log::info!("We are initialized");
-    let mut mutable_link_map = get_mut_map();
+    let mut mutable_link_map = get_mut_map("libminecraftpe.so");
     let _aaset_orig =
-        mutable_link_map
-            .hook::<unsafe fn(
-                *mut AAssetManager,
-                *const libc::c_char,
-                libc::c_int,
-            ) -> *mut ndk_sys::AAsset>("AAssetManager_open", aasset_hook as *const _)
-            .unwrap()
-            .unwrap();
-    let mut mutable_link_map = get_mut_map();
+            mutable_link_map
+                .hook::<unsafe fn(
+                    *mut AAssetManager,
+                    *const libc::c_char,
+                    libc::c_int,
+                ) -> *mut ndk_sys::AAsset>(
+                    "AAssetManager_open", aasset_hook as *const _
+                )
+                .unwrap()
+                .unwrap();
+    // TODO: plt-rs somehow keeps ownership of this??,
+    // find a way to avoid re getting linkmap
+    let mut mutable_link_map = get_mut_map("libminecraftpe.so");
     let _fopen_orig = mutable_link_map
         .hook::<unsafe fn(*const libc::c_char, *const libc::c_char) -> *mut libc::FILE>(
             "fopen",
@@ -93,9 +99,16 @@ pub fn startup() {
         )
         .unwrap()
         .unwrap();
+    // Very experimental!!!
+    let mut mutable_link_map = get_mut_map("libc++_shared.so");
+    let _fopen_orig = mutable_link_map
+        .hook::<unsafe fn(*const libc::c_char, libc::c_int) -> libc::c_int>(
+            "fopen",
+            cxx_fopen_hook as *const _,
+        )
+        .unwrap()
+        .unwrap();
     log::info!("Finished hooking");
-    // fucking shit why dont you work or give me a
-    // understandable error instead of 6657 you shit
     let app_dir = app_dir(AppDataType::UserData, &MC_APP_INFO, "");
     if app_dir.is_err() {
         // We prolly got a jvm exception soo

@@ -6,13 +6,6 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 use thiserror::Error;
 
-// Keeps track and manages data about the minecraft Resource Pack Structure
-pub struct DataManager {
-    valid_packs: Vec<ValidPack>,
-    valid_packs_path: PathBuf,
-    global_packs_path: PathBuf,
-}
-
 // A pack that minecraft verified as valid
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -24,11 +17,15 @@ pub struct ValidPack {
 
 // A active global pack
 #[derive(Deserialize, Debug)]
-struct GlobalPack {
-    pack_id: String,
-    subpack: Option<String>,
+pub struct ActivePack {
+    pub pack_id: String,
+    pub subpack: Option<String>,
 }
-
+pub struct DataManager {
+    valid_packs: Vec<ValidPack>,
+    valid_packs_path: PathBuf,
+    active_packs_path: PathBuf,
+}
 #[derive(Error, Debug)]
 pub enum Error {
     //    #[error("Getting minecraft dir failed")]
@@ -38,22 +35,20 @@ pub enum Error {
     #[error("Io error while reading json")]
     ReadError(#[from] io::Error),
 }
-
 impl DataManager {
-    // Get minecraft paths and create itself
-    pub fn init_data(mcjsons_dir: &Path) -> Self {
-        let valid_packs_path = mcjsons_dir.join("valid_known_packs.json");
-        let global_packs_path = mcjsons_dir.join("global_resource_packs.json");
+    pub fn new(path: &Path) -> Self {
+        let valid_packs_path = path.join("valid_resource_packs.json");
+        let active_packs_path = path.join("global_resource_packs.json");
         Self {
             valid_packs: Vec::new(),
             valid_packs_path,
-            global_packs_path,
+            active_packs_path,
         }
     }
-
     // Get valid packs from minecraft
-    pub fn update_validpacks(&mut self) -> Result<(), Error> {
-        let mut valid_packs: Vec<ValidPack> = vec_from_json(&self.valid_packs_path)?;
+    pub fn parse_validpacks(&mut self) -> Result<(), Error> {
+        let file = fs::read_to_string(&self.valid_packs_path)?;
+        let mut valid_packs: Vec<ValidPack> = serde_json::from_str(&file)?;
         if let Some(file_version) = valid_packs[0].file_version {
             assert!(file_version == 2);
             valid_packs.remove(0);
@@ -61,19 +56,19 @@ impl DataManager {
         self.valid_packs = valid_packs;
         Ok(())
     }
-
     // Get a list of shader paths
-    pub fn shader_paths(&self) -> Result<HashMap<OsString, PathBuf>, Error> {
-        let global_packs: Vec<GlobalPack> = vec_from_json(&self.global_packs_path)?;
-        log::info!("global_packs parsed: {:#?}", global_packs);
+    pub fn shader_paths(&mut self) -> Result<HashMap<OsString, PathBuf>, Error> {
+        let file = fs::read_to_string(&self.active_packs_path)?;
+        let active_packs: Vec<ActivePack> = serde_json::from_str(&file)?;
         let mut final_paths = HashMap::new();
-        for pack in global_packs {
-            if let Some(vp) = self.valid_packs.iter().find(|vp| pack.pack_id == vp.uuid) {
-                let mut paths = match scan_pack(&vp.path, pack.subpack) {
+        for pack in active_packs {
+            if let Some(valid_pack) = self.valid_packs.iter().find(|vp| vp.uuid == pack.pack_id) {
+                let mut paths = match scan_pack(&valid_pack.path, pack.subpack) {
                     Some(paths) => paths,
                     None => continue,
                 };
                 log::info!("scan pack paths : {:#?}", &paths);
+                // Idrk if this is efficient or not but i guess not
                 let filt_paths: HashMap<OsString, PathBuf> = paths
                     .drain()
                     .filter(|(k, _)| !final_paths.contains_key(k))
@@ -85,17 +80,22 @@ impl DataManager {
 
         Ok(final_paths)
     }
-    // Get shaders in pack directory
 }
-fn scan_pack(path: &str, subpack: Option<String>) -> Option<HashMap<OsString, PathBuf>> {
-    let path = Path::new(path);
+// Get shaders in pack directory
+
+/// Scan a pack and returns paths containing shaders, or none if theres an error
+pub fn scan_pack<T: AsRef<Path>>(
+    path: T,
+    subpack: Option<String>,
+) -> Option<HashMap<OsString, PathBuf>> {
+    let path = path.as_ref();
     let mut pack_files = match scan_path(path) {
         Ok(paths) => paths,
         Err(_) => return None,
     };
     if let Some(subpack) = subpack {
         let mut subpath = path.join("subpacks");
-	subpath.push(subpack);
+        subpath.push(subpack);
         let sub_files = match scan_path(&subpath) {
             Ok(subpaths) => subpaths,
             Err(_) => return None,
@@ -114,16 +114,10 @@ fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
         let path = entry.path();
         let file_name = entry.file_name();
         let bytes = file_name.as_encoded_bytes();
-        if !paths.contains_key(&file_name) && bytes.ends_with(b".material.bin") {
+        if bytes.ends_with(b".material.bin") {
             log::info!("scan_path found a valid shader path!: {:#?}", &path);
             paths.insert(file_name, path);
         }
     }
     Ok(paths)
-}
-
-pub(crate) fn vec_from_json<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, Error> {
-    let json_file = fs::read_to_string(path).expect("path does not exist!!");
-    let json_vec: Vec<T> = serde_json::from_str(&json_file)?;
-    Ok(json_vec)
 }
