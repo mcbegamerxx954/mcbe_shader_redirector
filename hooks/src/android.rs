@@ -105,10 +105,10 @@ pub(crate) unsafe extern "C" fn fopen_hook(
     drop(wc_ref);
     //Now we drop the lock to avoid bugs
     drop(wc_lock);
-    if prep_world_cache(&world_path).is_err() {
-        log::error!("Ok so prepping world cache failed with : {}", e)
+    if let Err(e) = prep_world_cache(&world_path) {
+        log::error!("Ok so prepping world cache failed with : {}", e);
         return file;
-    }
+    };
 
     log::info!("Prepared world cache for world :{:#?}", &world_name);
     file
