@@ -1,4 +1,4 @@
-use app_dirs2::{app_dir, app_root, AppDataType};
+use app_dirs2::{app_root, AppDataType};
 use notify::event::{AccessKind, AccessMode, EventKind};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use once_cell::sync::Lazy;
@@ -6,7 +6,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, OsStr, OsString};
 use std::fs;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use crate::common::{self, StorageType};
 use crate::mc_utils::ActivePack;
 use crate::mc_utils::Error;
-use crate::mc_utils::{self, DataManager, ValidPack};
+use crate::mc_utils::{self, DataManager};
 // Yeh
 #[derive(Default)]
 struct WorldStuff {
@@ -69,7 +69,7 @@ pub(crate) unsafe extern "C" fn fopen_hook(
         return file;
     }
     let mut wc_lock = WORLD_CACHE.lock().expect("Lock is poisoned!");
-    let mut wc_ref = wc_lock.deref_mut();
+    let wc_ref = wc_lock.deref_mut();
     let os_path = OsStr::from_bytes(raw_path);
     let path = Path::new(os_path);
     if !path.starts_with(&wc_ref.world_path) {
@@ -105,7 +105,7 @@ pub(crate) unsafe extern "C" fn fopen_hook(
     drop(wc_ref);
     //Now we drop the lock to avoid bugs
     drop(wc_lock);
-    let cringe = match prep_world_cache(&world_path) {
+    match prep_world_cache(&world_path) {
         Ok(cringe) => cringe,
         Err(e) => log::error!("Ok so prepping world cache failed with : {}", e),
     };
@@ -113,54 +113,7 @@ pub(crate) unsafe extern "C" fn fopen_hook(
     log::info!("Prepared world cache for world :{:#?}", &world_name);
     file
 }
-pub(crate) unsafe extern "C" fn cxx_fopen_hook(
-    filename: *const libc::c_char,
-    mode: *const libc::c_char,
-) -> *mut libc::FILE {
-    let file = libc::fopen(filename, mode);
-    let c_str = CStr::from_ptr(filename);
-    let raw_path = c_str.to_bytes();
-    // This normally means that minecraft is loading files form a resource pack
-    if !raw_path.ends_with(b"contents.json") {
-        return file;
-    }
-    let mut locked_wc = WORLD_CACHE.lock().expect("Lock is poisoned!");
-    let mut wc_owned = locked_wc.deref_mut();
-    let os_path = OsStr::from_bytes(raw_path);
-    let path = Path::new(os_path);
-    if !path.starts_with(&wc_owned.world_path) {
-        log::warn!("Path does not end with standard world prefix: {:#?}", path);
-        return file;
-    }
-    // Drop them as they are not used anymore and they lock
-    // World name should be before contents.json, rp name and rp folder path
-    let Some(world_name) = path.components().nth_back(2) else {
-        return file;
-    };
-    let Component::Normal(world_name) = world_name else {
-        log::warn!(
-            "Supposed World name is not a standard os string!: {:#?}",
-            world_name
-        );
-        return file;
-    };
-    let world_path = path.join(world_name);
-    if !world_path.exists() {
-        log::warn!("Supposed world path does not exist!: {:#?}", world_path);
-        return file;
-    }
-    log::trace!("Updating last world with:{:#?}", &world_name);
-    wc_owned.last_world = world_name.to_owned();
-    // drop wc to prevent deadlock
-    drop(locked_wc);
-    let cringe = match prep_world_cache(&world_path) {
-        Ok(cringe) => cringe,
-        Err(e) => log::error!("Ok so prepping world cache failed with : {}", e),
-    };
 
-    log::info!("cxx loaded path, filename:{:#?}", c_str);
-    file
-}
 fn find_replacement(raw_path: &CStr) -> Option<CString> {
     // I want to check this later for correctness
     let raw_bytes = raw_path.to_bytes();
@@ -203,7 +156,7 @@ pub(crate) fn watch_jsons(app_dir: PathBuf) {
             continue;
         }
         log::info!("Recieved interesting event: {:#?}", event);
-        let mut path = event.paths.swap_remove(0);
+        let path = event.paths.swap_remove(0);
         let mut external_path: Option<PathBuf> = Option::None;
         let file_name = path.file_name().unwrap();
         if file_name == "options.txt" {
@@ -211,7 +164,7 @@ pub(crate) fn watch_jsons(app_dir: PathBuf) {
             match storage_type {
                 StorageType::Internal => {
                     let mut locked = WORLD_CACHE.lock().expect("Lock got poisoned!");
-                    let mut wc_owned = locked.deref_mut();
+                    let wc_owned = locked.deref_mut();
                     let mut cringe = path.clone();
                     cringe.pop();
                     cringe.push("minecraftWorlds");
@@ -219,7 +172,7 @@ pub(crate) fn watch_jsons(app_dir: PathBuf) {
                 }
                 StorageType::External => {
                     let mut locked = WORLD_CACHE.lock().expect("Lock got poisoned!");
-                    let mut wc_owned = locked.deref_mut();
+                    let wc_owned = locked.deref_mut();
                     if external_path.is_none() {
                         let mut ext_app_dir =
                             app_root(AppDataType::SharedData, &crate::MC_APP_INFO)
@@ -260,12 +213,12 @@ pub(crate) struct Pack {
 }
 pub(crate) fn prep_world_cache(path: &Path) -> Result<(), Error> {
     let mut locked = WORLD_CACHE.lock().expect("Mutex is poisoned!");
-    let mut wc_owned = locked.deref_mut();
+    let wc_owned = locked.deref_mut();
     // We lock this early to make sure we load our shaders
     let mut locked = SHADER_PATHS.lock().expect("Mutex is poisoned!");
-    let mut sp_owned = locked.deref_mut();
+    let sp_owned = locked.deref_mut();
     let gpack_path = path.join("world_resource_packs.json");
-    let file = fs::read_to_string(&gpack_path)?;
+    let file = fs::read_to_string(gpack_path)?;
     let apacks: Vec<ActivePack> = serde_json::from_str(&file)?;
     let vpacks: Vec<Pack> = get_packs_from_dir(&path.join("resource_packs"))?;
     let mut paths: HashMap<OsString, PathBuf> = HashMap::new();
@@ -318,14 +271,7 @@ fn get_packs_from_dir(path: &Path) -> Result<Vec<Pack>, Error> {
     }
     Ok(packs)
 }
-fn get_world_packs(path: &Path, subpack: Option<String>) -> Result<(), Error> {
-    let pack_dirs = fs::read_dir(path)?;
-    for dir in pack_dirs.flatten() {
-        let mut path_to_shaders = dir.path();
-        path_to_shaders.extend(["renderer", "materials"].into_iter());
-    }
-    Ok(())
-}
+
 pub(crate) fn update_global_sp(dataman: &mut DataManager, full: bool) {
     if full {
         dataman.parse_validpacks().expect("Cant update valid packs");
@@ -337,6 +283,6 @@ pub(crate) fn update_global_sp(dataman: &mut DataManager, full: bool) {
     // We changed global sp so we put this to make hook know that
     // the sp is not with the world packs included anymore.
     let mut locked_wc = WORLD_CACHE.lock().expect("Mutex got poisoned!");
-    let mut wc = locked_wc.deref_mut();
+    let wc = locked_wc.deref_mut();
     wc.last_world = OsString::new();
 }

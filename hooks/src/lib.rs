@@ -1,8 +1,8 @@
 mod android;
 mod common;
 mod mc_utils;
-use android::{aasset_hook, cxx_fopen_hook, fopen_hook, watch_jsons};
-use app_dirs2::{app_dir, AppDataType, AppInfo};
+use android::{aasset_hook, fopen_hook, watch_jsons};
+use app_dirs2::{app_root, AppDataType, AppInfo};
 use jni::sys::{jint, JNI_VERSION_1_6};
 use jni::{objects::JObject, JNIEnv, JavaVM};
 use ndk_sys::AAssetManager;
@@ -99,17 +99,7 @@ pub fn startup() {
         )
         .unwrap()
         .unwrap();
-    // Very experimental!!!
-    let mut mutable_link_map = get_mut_map("libc++_shared.so");
-    let _fopen_orig = mutable_link_map
-        .hook::<unsafe fn(*const libc::c_char, libc::c_int) -> libc::c_int>(
-            "fopen",
-            cxx_fopen_hook as *const _,
-        )
-        .unwrap()
-        .unwrap();
-    log::info!("Finished hooking");
-    let app_dir = app_dir(AppDataType::UserData, &MC_APP_INFO, "");
+    let app_dir = app_root(AppDataType::UserData, &MC_APP_INFO);
     if app_dir.is_err() {
         // We prolly got a jvm exception soo
         let vm = unsafe {
@@ -128,6 +118,7 @@ pub fn startup() {
         log::info!("Hello from thread");
         let _ = app_dir.pop();
         let _ = app_dir.pop();
+        //This is android anyways so dont try to crossplatform it
         app_dir.push("games/com.mojang/minecraftpe");
         log::info!("path is: {:#?}", &app_dir);
         watch_jsons(app_dir);
