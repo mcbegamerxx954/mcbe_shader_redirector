@@ -1,3 +1,7 @@
+# NOTICE
+This does not work properly and i dont know if it ever will
+because minecraft precaches worlds (yeah)
+
 # MCBER
 This crate is made to redirect MCBE shaders to ones from resource packs externally so that it can work with any mcbe version and even multiple platforms.
 for now it only supports android
