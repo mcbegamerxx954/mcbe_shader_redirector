@@ -1,17 +1,9 @@
-use mc_rpfs::DataManager;
-use notify::event::{AccessKind, AccessMode, EventKind};
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+use crate::SHADER_PATHS;
+use std::ffi::{CStr, CString, OsStr};
 use std::os::unix::ffi::OsStrExt;
-use once_cell::sync::Lazy;
-use std::collections::HashMap;
-use std::ffi::{CStr, CString, OsStr, OsString};
-use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-// Nvm RwLock is slower 
-static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
+use std::path::Path;
 
-#[inline(never)]
+// Nvm RwLock is slower
 pub(crate) unsafe extern "C" fn aasset_hook(
     man: *mut ndk_sys::AAssetManager,
     filename: *const libc::c_char,
@@ -55,57 +47,28 @@ fn find_replacement(raw_path: &CStr) -> Option<CString> {
     let os_str = OsStr::from_bytes(raw_bytes);
     let path = Path::new(os_str);
     let filename = path.file_name()?;
-    let sp_owned = SHADER_PATHS.lock().expect("RwLock got poisoned!");
+    // If this except happened we should sto
+    let sp_owned = match SHADER_PATHS.lock() {
+        Ok(sp_owned) => sp_owned,
+        Err(e) => {
+            //Prevent Crash if other thread silently fails
+            log::error!("Fatal lock error: {e}");
+            return None;
+        }
+    };
     if sp_owned.contains_key(filename) {
         let new_path = sp_owned.get(filename)?;
-        let result = CString::new(new_path.to_str()?).expect("Non utf in sp (this is a bug)");
-
-        return Some(result);
-    }
-    None
-}
-
-pub(crate) fn watch_jsons(app_dir: PathBuf) {
-    let mut dataman = DataManager::init_data(&app_dir);
-    let (sender, reciever) = crossbeam_channel::unbounded();
-    let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
-
-    if let Err(e) = watcher.watch(&app_dir, RecursiveMode::NonRecursive) {
-        panic!("Watch failed: {}", e);
-    };
-
-    for event in reciever {
-        let event = match event {
-            Ok(event) => event,
-            Err(_) => {
-                log::info!("Event is err, skipping");
-                continue;
+        let replacement = match CString::new(new_path.to_str()?) {
+            Ok(replacement) => replacement,
+            Err(e) => {
+                log::warn!(
+                    "PathBuf [{}] to Cstr failed with: {e}, skipping..",
+                    new_path.display()
+                );
+                return None;
             }
         };
-        if event.kind != EventKind::Access(AccessKind::Close(AccessMode::Write)) {
-            log::info!("Skipping event..");
-            continue;
-        }
-        log::info!("Recieved interesting event: {:#?}", event);
-        let file_name = event.paths[0].file_name().unwrap();
-        if file_name == "global_resource_packs.json" {
-            log::info!("Grp changed, updating..");
-            update_global_sp(&mut dataman, false);
-        }
-        if file_name == "valid_known_packs.json" {
-            log::info!("Vpk changed, full updating..");
-            update_global_sp(&mut dataman, true);
-        }
+        return Some(replacement);
     }
-}
-pub(crate) fn update_global_sp(dataman: &mut DataManager, full: bool) {
-    if full {
-        dataman
-            .update_validpacks()
-            .expect("Cant update valid packs");
-    }
-    let data = dataman.shader_paths().expect("Cant update shader_paths");
-    let mut locked_sp = SHADER_PATHS.lock().expect("RwLock got poisoned!");
-    *locked_sp = data;
-    log::info!("Updated global shader paths: {:#?}", &locked_sp);
+    None
 }
