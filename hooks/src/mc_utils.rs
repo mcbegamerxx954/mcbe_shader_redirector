@@ -30,7 +30,7 @@ struct GlobalPack {
 }
 
 #[derive(Error, Debug)]
-pub enum Error {
+pub enum DataError {
     //    #[error("Getting minecraft dir failed")]
     //    AppDirsError(#[from] app_dirs2::AppDirsError);
     #[error("Failed to deserialize json")]
@@ -52,7 +52,7 @@ impl DataManager {
     }
 
     // Get valid packs from minecraft
-    pub fn update_validpacks(&mut self) -> Result<(), Error> {
+    pub fn update_validpacks(&mut self) -> Result<(), DataError> {
         let mut valid_packs: Vec<ValidPack> = vec_from_json(&self.valid_packs_path)?;
         if let Some(file_version) = valid_packs[0].file_version {
             assert!(file_version == 2);
@@ -63,15 +63,18 @@ impl DataManager {
     }
 
     // Get a list of shader paths
-    pub fn shader_paths(&self) -> Result<HashMap<OsString, PathBuf>, Error> {
+    pub fn shader_paths(&self) -> Result<HashMap<OsString, PathBuf>, DataError> {
         let global_packs: Vec<GlobalPack> = vec_from_json(&self.global_packs_path)?;
         log::info!("global_packs parsed: {:#?}", global_packs);
         let mut final_paths = HashMap::new();
         for pack in global_packs {
             if let Some(vp) = self.valid_packs.iter().find(|vp| pack.pack_id == vp.uuid) {
                 let mut paths = match scan_pack(&vp.path, pack.subpack) {
-                    Some(paths) => paths,
-                    None => continue,
+                    Ok(paths) => paths,
+                    Err(e) => {
+                        log::error!("scan paths error: {e}");
+                        continue;
+                    }
                 };
                 log::info!("scan pack paths : {:#?}", &paths);
                 let filt_paths: HashMap<OsString, PathBuf> = paths
@@ -87,23 +90,18 @@ impl DataManager {
     }
     // Get shaders in pack directory
 }
-fn scan_pack(path: &str, subpack: Option<String>) -> Option<HashMap<OsString, PathBuf>> {
+fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     let path = Path::new(path);
-    let mut pack_files = match scan_path(path) {
-        Ok(paths) => paths,
-        Err(_) => return None,
-    };
+    let mut pack_files = scan_path(path)?;
     if let Some(subpack) = subpack {
         let mut subpath = path.join("subpacks");
-	subpath.push(subpack);
-        let sub_files = match scan_path(&subpath) {
-            Ok(subpaths) => subpaths,
-            Err(_) => return None,
-        };
-        log::info!("expanding pack files with :{:#?}", &sub_files);
+        subpath.push(subpack);
+
+        let sub_files = scan_path(&subpath)?;
+        log::trace!("expanding pack files with :{:#?}", &sub_files);
         pack_files.extend(sub_files);
     }
-    Some(pack_files)
+    Ok(pack_files)
 }
 fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     let mut path = path.join("renderer");
@@ -122,7 +120,7 @@ fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     Ok(paths)
 }
 
-pub(crate) fn vec_from_json<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, Error> {
+pub(crate) fn vec_from_json<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, DataError> {
     let json_file = fs::read_to_string(path).expect("path does not exist!!");
     let json_vec: Vec<T> = serde_json::from_str(&json_file)?;
     Ok(json_vec)
