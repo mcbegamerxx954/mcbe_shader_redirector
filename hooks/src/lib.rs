@@ -96,14 +96,8 @@ pub fn startup() {
     log::info!("Finished hooking");
     let mut app_dir = app_root(AppDataType::UserData, &MC_APP_INFO).unwrap();
     std::panic::set_hook(Box::new(move |panic_info| {
-        log::error!("Thread crashed");
-        if let Some(location) = panic_info.location() {
-            log::error!(
-                "Thread panic ocurred in file '{}' at line {}",
-                location.file(),
-                location.line(),
-            );
-        }
+        log::error!("Thread crashed: {}", panic_info);
+
         // Sadly plt-rs is very mean when it comes to using its stuff
         /*
         log::error!("Undoing hooks..");
@@ -115,6 +109,7 @@ pub fn startup() {
         }
         */
     }));
+
     let _handler = thread::spawn(|| {
         log::info!("Hello from thread");
         let _ = app_dir.pop();

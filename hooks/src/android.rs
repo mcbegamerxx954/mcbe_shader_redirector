@@ -47,7 +47,7 @@ fn find_replacement(raw_path: &CStr) -> Option<CString> {
     let os_str = OsStr::from_bytes(raw_bytes);
     let path = Path::new(os_str);
     let filename = path.file_name()?;
-    // If this except happened we should sto
+    // If this happened something went very wrong
     let sp_owned = match SHADER_PATHS.lock() {
         Ok(sp_owned) => sp_owned,
         Err(e) => {

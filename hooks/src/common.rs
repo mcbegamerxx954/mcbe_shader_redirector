@@ -45,13 +45,19 @@ pub(crate) fn setup_json_watcher(app_dir: PathBuf) {
 }
 fn update_global_sp(dataman: &mut DataManager, full: bool) {
     if full {
-        dataman
-            .update_validpacks()
-            .expect("Cant update valid packs");
+        if let Err(e) = dataman.update_validpacks() {
+            log::warn!("Cant update valid packs: {:#?}", e);
+            return;
+        };
     }
-    let data = dataman.shader_paths().expect("Cant update shader_paths");
-    // We unwrap because we are another thread
-    // + this is near impossible to ocurr
+    let data = match dataman.shader_paths() {
+        Ok(spaths) => spaths,
+        Err(e) => {
+            log::warn!("Cant update shader paths: {:#?}", e);
+            return;
+        }
+    };
+    // If this happened mcbe crashed, somehow....
     let mut locked_sp = SHADER_PATHS.lock().unwrap();
     *locked_sp = data;
     log::info!("Updated global shader paths: {:#?}", &locked_sp);
