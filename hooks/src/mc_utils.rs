@@ -76,13 +76,10 @@ impl DataManager {
                         continue;
                     }
                 };
-                log::info!("scan pack paths : {:#?}", &paths);
-                let filt_paths: HashMap<OsString, PathBuf> = paths
-                    .drain()
-                    .filter(|(k, _)| !final_paths.contains_key(k))
-                    .collect();
-                log::info!("fil paths is :{:#?}", &filt_paths);
-                final_paths.extend(filt_paths);
+                log::info!("scan pack paths: {:#?}", &paths);
+                paths.retain(|k, _| !final_paths.contains_key(k));
+                log::info!("unique paths are: {:#?}", &paths);
+                final_paths.extend(paths);
             }
         }
 
@@ -91,9 +88,11 @@ impl DataManager {
     // Get shaders in pack directory
 }
 fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, PathBuf>, io::Error> {
+    log::trace!("Scanning path: {}", path);
     let path = Path::new(path);
     let mut pack_files = scan_path(path)?;
     if let Some(subpack) = subpack {
+        log::info!("Scanning subpath: {}", &subpack);
         let mut subpath = path.join("subpacks");
         subpath.push(subpack);
 

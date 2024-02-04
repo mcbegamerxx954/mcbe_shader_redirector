@@ -93,6 +93,7 @@ pub fn startup() {
         )
         .unwrap()
         .unwrap();
+
     log::info!("Finished hooking");
     let mut app_dir = app_root(AppDataType::UserData, &MC_APP_INFO).unwrap();
     std::panic::set_hook(Box::new(move |panic_info| {

@@ -38,6 +38,8 @@ pub(crate) unsafe extern "C" fn fopen_hook(
         }
     }
 }
+// Here we try our best to not crash because we dont want
+// a normal player getting a random crash while theyre doing stuff
 fn find_replacement(raw_path: &CStr) -> Option<CString> {
     // I want to check this later for correctness
     let raw_bytes = raw_path.to_bytes();
@@ -58,7 +60,10 @@ fn find_replacement(raw_path: &CStr) -> Option<CString> {
     };
     if sp_owned.contains_key(filename) {
         let new_path = sp_owned.get(filename)?;
-        let replacement = match CString::new(new_path.to_str()?) {
+        // SAFETY: file apis tend to accept const ptrs
+        // BENEFIT: we can avoid a .to_str call
+        let npath_bytes = new_path.as_os_str().as_bytes();
+        let replacement = match CString::new(npath_bytes) {
             Ok(replacement) => replacement,
             Err(e) => {
                 log::warn!(
