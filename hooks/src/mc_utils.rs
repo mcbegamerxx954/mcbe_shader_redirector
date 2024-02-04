@@ -121,7 +121,7 @@ fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
 }
 
 pub(crate) fn vec_from_json<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, DataError> {
-    let json_file = fs::read_to_string(path).expect("path does not exist!!");
+    let json_file = fs::read_to_string(path)?;
     let json_vec: Vec<T> = serde_json::from_str(&json_file)?;
     Ok(json_vec)
 }
