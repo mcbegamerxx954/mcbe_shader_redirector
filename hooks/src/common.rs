@@ -2,15 +2,13 @@ use crate::mc_utils::DataManager;
 use crate::SHADER_PATHS;
 use notify::event::{AccessKind, AccessMode, EventKind};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::PathBuf;
+use std::path::Path;
 
-pub(crate) fn setup_json_watcher(app_dir: PathBuf) {
-    let mut dataman = DataManager::init_data(&app_dir);
+pub(crate) fn setup_json_watcher(app_dir: &Path) {
+    let mut dataman = DataManager::init_data(app_dir);
     let (sender, reciever) = crossbeam_channel::unbounded();
     let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
-    watcher
-        .watch(&app_dir, RecursiveMode::NonRecursive)
-        .unwrap();
+    watcher.watch(app_dir, RecursiveMode::NonRecursive).unwrap();
 
     for event in reciever {
         let event = match event {

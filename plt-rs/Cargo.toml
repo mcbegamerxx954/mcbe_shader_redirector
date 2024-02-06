@@ -19,5 +19,4 @@ crate-type = ["lib"]
 
 [dependencies]
 libc = "0.2.137"
-thiserror = "1.0.40"
 #proc-maps = "0.3.0"
