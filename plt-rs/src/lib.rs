@@ -1,7 +1,6 @@
 use std::{borrow::Cow, ffi::c_int};
 
 use libc::{c_void, mprotect, PROT_READ, PROT_WRITE, _SC_PAGE_SIZE};
-use thiserror::Error;
 use unix::{ElfAddr, ElfDyn, ElfSym, LinkMap, SectionType, R_GLOB_DAT, R_JUMP_SLOT};
 
 mod unix;
@@ -16,17 +15,27 @@ mod unix_view;
 #[cfg(target_os = "linux")]
 pub use unix_view::LinkMapView;
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum PltError {
-    #[error(
-        "Unable to mprotect address, unaligned: {0:X?}, aligned: {1:X?}, desired flags: {2:?}, response: {3:?}"
-    )]
     Protection(*const c_void, *const c_void, c_int, c_int),
 
-    #[error("Expected the presence of section `{0:#?}`")]
     Section(SectionType),
 }
 
+impl std::error::Error for PltError {}
+impl std::fmt::Display for PltError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::Protection(unaligned, aligned, desired_flags, response) => {
+                write!(f, "Unable to mprotect address, unaligned: {0:X?}, aligned: {1:X?}, desired flags: {2:?}, response: {3:?}",
+                unaligned, aligned, desired_flags, response)
+            }
+            Self::Section(section_type) => {
+                write!(f, "Expected the presence of section: {:#?}", section_type)
+            }
+        }
+    }
+}
 pub type PltResult<T> = Result<T, PltError>;
 
 #[derive(Debug)]

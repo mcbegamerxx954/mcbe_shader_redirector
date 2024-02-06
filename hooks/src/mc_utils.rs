@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
-use thiserror::Error;
 
 // Keeps track and manages data about the minecraft Resource Pack Structure
 pub struct DataManager {
@@ -29,16 +28,38 @@ struct GlobalPack {
     subpack: Option<String>,
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum DataError {
     //    #[error("Getting minecraft dir failed")]
     //    AppDirsError(#[from] app_dirs2::AppDirsError);
-    #[error("Failed to deserialize json")]
-    JsonError(#[from] serde_json::Error),
-    #[error("Io error while reading json")]
-    ReadError(#[from] io::Error),
+    JsonError(serde_json::Error),
+    IoError(io::Error),
+}
+impl std::error::Error for DataError {}
+impl std::fmt::Display for DataError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Self::JsonError(serde_error) => {
+                write!(f, "Expected valid json: {:?}", serde_error)
+            }
+            Self::IoError(io_error) => {
+                write!(f, "Cant read json file: {:?}", io_error)
+            }
+        }
+    }
 }
 
+impl From<serde_json::Error> for DataError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::JsonError(err)
+    }
+}
+
+impl From<io::Error> for DataError {
+    fn from(err: io::Error) -> Self {
+        Self::IoError(err)
+    }
+}
 impl DataManager {
     // Get minecraft paths and create itself
     pub fn init_data(mcjsons_dir: &Path) -> Self {
