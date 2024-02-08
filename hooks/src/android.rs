@@ -38,42 +38,36 @@ pub(crate) unsafe extern "C" fn fopen_hook(
         }
     }
 }
-// Here we try our best to not crash because we dont want
-// a normal player getting a random crash while theyre doing stuff
+// We log all Nones and errs because i cant BACKTRACE  :(
 fn find_replacement(raw_path: &CStr) -> Option<CString> {
     // I want to check this later for correctness
     let raw_bytes = raw_path.to_bytes();
     if !raw_bytes.ends_with(b".material.bin") {
+        log::info!("path does not end with shader suffix: {:#?}", raw_path);
         return None;
     }
     let os_str = OsStr::from_bytes(raw_bytes);
     let path = Path::new(os_str);
     let filename = path.file_name()?;
-    // If this happened something went very wrong
+    log::trace!("filename is: {:#?}", filename);
+    // If this is err something went very wrong
     let sp_owned = match SHADER_PATHS.lock() {
         Ok(sp_owned) => sp_owned,
         Err(e) => {
             //Prevent Crash if other thread silently fails
-            log::error!("Fatal lock error: {e}");
+            log::error!("Ignoring lock poison: {e}");
             return None;
         }
     };
-    if sp_owned.contains_key(filename) {
-        let new_path = sp_owned.get(filename)?;
-        // SAFETY: file apis tend to accept const ptrs
-        // BENEFIT: we can avoid a .to_str call
-        let npath_bytes = new_path.as_os_str().as_bytes();
-        let replacement = match CString::new(npath_bytes) {
-            Ok(replacement) => replacement,
-            Err(e) => {
-                log::warn!(
-                    "PathBuf [{}] to Cstr failed with: {e}, skipping..",
-                    new_path.display()
-                );
-                return None;
-            }
-        };
-        return Some(replacement);
-    }
-    None
+    let Some(new_path) = sp_owned.get(filename) else {
+        log::warn!("Cant find replacement for filename: {:#?}", filename);
+        return None;
+    };
+    let npath_bytes = new_path.as_os_str().as_bytes();
+    let Ok(replacement) = CString::new(npath_bytes) else {
+        log::warn!("PathBuf: [{:#?}] has a trailing 0!", new_path);
+        return None;
+    };
+    log::warn!("Found replacement: {:#?}", new_path);
+    Some(replacement)
 }

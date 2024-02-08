@@ -4,11 +4,12 @@ use notify::event::{AccessKind, AccessMode, EventKind};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::Path;
 
-pub(crate) fn setup_json_watcher(app_dir: &Path) {
-    let mut dataman = DataManager::init_data(app_dir);
+pub(crate) fn setup_json_watcher<T: AsRef<Path>>(app_dir: T) {
+    let path: &Path = app_dir.as_ref();
+    let mut dataman = DataManager::init_data(path);
     let (sender, reciever) = crossbeam_channel::unbounded();
     let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
-    watcher.watch(app_dir, RecursiveMode::NonRecursive).unwrap();
+    watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
 
     for event in reciever {
         let event = match event {
@@ -42,6 +43,7 @@ pub(crate) fn setup_json_watcher(app_dir: &Path) {
     }
 }
 fn update_global_sp(dataman: &mut DataManager, full: bool) {
+    let mut locked_sp = SHADER_PATHS.lock().unwrap();
     if full {
         if let Err(e) = dataman.update_validpacks() {
             log::warn!("Cant update valid packs: {:#?}", e);
@@ -55,8 +57,6 @@ fn update_global_sp(dataman: &mut DataManager, full: bool) {
             return;
         }
     };
-    // If this happened mcbe crashed, somehow....
-    let mut locked_sp = SHADER_PATHS.lock().unwrap();
     *locked_sp = data;
     log::info!("Updated global shader paths: {:#?}", &locked_sp);
 }
