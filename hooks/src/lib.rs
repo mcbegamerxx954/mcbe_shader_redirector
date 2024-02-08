@@ -2,6 +2,7 @@ mod android;
 mod common;
 mod mc_utils;
 use android::{aasset_hook, fopen_hook};
+use jni_sys::JNI_VERSION_1_6;
 use ndk_sys::AAssetManager;
 use once_cell::sync::Lazy;
 use plt_rs::{LinkMapView, MutableLinkMap};
@@ -14,15 +15,12 @@ use std::thread;
 static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-const MC_PATH: &str = "/data/user/0/com.mojang.minecraftpe/games/com.mojang/minecraftpe";
-const JNI_VERSION_1_6: i32 = 65542;
-
 fn get_mut_map<'a>() -> MutableLinkMap<'a> {
     let link_map = LinkMapView::from_dynamic_library("libminecraftpe.so").expect("open link map");
 
     MutableLinkMap::from_view(link_map)
 }
-
+#[cfg(not(feature = "dynamic_path"))]
 #[no_mangle]
 pub extern "system" fn JNI_OnLoad(_: *mut libc::c_void, _: *mut libc::c_void) -> libc::c_int {
     android_logger::init_once(
@@ -31,8 +29,73 @@ pub extern "system" fn JNI_OnLoad(_: *mut libc::c_void, _: *mut libc::c_void) ->
     startup();
     JNI_VERSION_1_6
 }
+#[cfg(feature = "dynamic_path")]
+#[no_mangle]
+pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _: *mut libc::c_void) -> libc::c_int {
+    android_logger::init_once(
+        android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
+    );
 
-pub fn startup() {
+    let env = vm.get_env().expect("Expected java env");
+    let context = get_global_context(env);
+    unsafe {
+        ndk_context::initialize_android_context(
+            vm.get_java_vm_pointer().cast(),
+            context.as_raw().cast(),
+        )
+    };
+    log::info!("Starting.....");
+    startup();
+    JNI_VERSION_1_6
+}
+
+#[cfg(feature = "dynamic_path")]
+fn get_global_context(mut env: jni::JNIEnv) -> jni::objects::JObject {
+    let activity_thread = env
+        .find_class("android/app/ActivityThread")
+        .expect("Cant find activitythread class");
+    let curr_activity_thread = env
+        .call_static_method(
+            activity_thread,
+            "currentActivityThread",
+            "()Landroid/app/ActivityThread;",
+            &[],
+        )
+        .expect("Expected activity thread")
+        .l()
+        .expect("Expected object from activity thread");
+    let context = env
+        .call_method(
+            curr_activity_thread,
+            "getApplication",
+            "()Landroid/app/Application;",
+            &[],
+        )
+        .expect("Expected android context")
+        .l()
+        .expect("Expected object from getapplication");
+    context
+}
+#[cfg(feature = "dynamic_path")]
+fn get_path() -> std::path::PathBuf {
+    use app_dirs2::{app_root, AppDataType, AppInfo};
+    const MC_APP_INFO: AppInfo = AppInfo {
+        name: "minecraftpe",
+        author: "mojang",
+    };
+    let mut app_dir = app_root(AppDataType::UserData, &MC_APP_INFO).unwrap();
+    // remove some parts that we dont use
+    let _ = app_dir.pop();
+    let _ = app_dir.pop();
+    // add the path we want to be in
+    app_dir.extend(["games", "com.mojang", "minecraftpe"]);
+    app_dir
+}
+#[cfg(not(feature = "dynamic_path"))]
+fn get_path() -> &'static std::path::Path {
+    Path::new("/data/user/0/com.mojang.minecraftpe/games/com.mojang/minecraftpe")
+}
+fn startup() {
     log::info!("Starting up!");
     let mut mutable_link_map = get_mut_map();
     let _aaset_orig =  mutable_link_map
@@ -70,7 +133,6 @@ pub fn startup() {
 
     let _handler = thread::spawn(|| {
         log::info!("Hello from thread");
-        let path = Path::new(MC_PATH);
-        common::setup_json_watcher(path);
+        common::setup_json_watcher(get_path());
     });
 }

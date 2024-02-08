@@ -16,6 +16,16 @@ log = "0.4.20"
 ndk-sys = "0.5.0"
 serde_json = { version = "1.0.113", features = ["preserve_order"] }
 serde = { version = "1.0.196", features = ["derive"] }
+app_dirs2 = { version = "2.5.5", optional = true }
+jni = { version = "0.21.1", optional = true }
+ndk-context = { version = "0.1.1", optional = true }
+
+# I will get rid of you one day.
+jni-sys = "0.4.0"
+
+[features]
+default = ["dynamic_path"]
+dynamic_path = ["dep:jni", "dep:app_dirs2", "dep:ndk-context"]
 
 [lib]
 crate-type = ["cdylib"]
