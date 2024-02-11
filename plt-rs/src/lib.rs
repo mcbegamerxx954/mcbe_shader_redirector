@@ -252,7 +252,10 @@ impl<'a> MutableLinkMap<'a> {
     }
 
     pub fn hook<FnT>(
-        &'a mut self,
+        // This is changed because for some reason this borrow stays as long as
+        // its lifetime which means any hook is a oneshot, specially if its mutable
+        // changed from: mutable to "inmutable".
+        &'a self,
         symbol_name: &str,
         desired_function: *const FnT,
     ) -> PltResult<Option<FunctionHook<FnT>>>
