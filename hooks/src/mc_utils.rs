@@ -131,6 +131,16 @@ fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     for entry in dir_entries.flatten() {
         let path = entry.path();
         let file_name = entry.file_name();
+        // Some very important checks are done here
+        let metadata = entry.metadata()?;
+        // Check if len is larger than usize
+        #[cfg(target_os = "android")]
+        if metadata.len() >= usize::MAX as u64 {
+            continue;
+        }
+        if !metadata.is_file() {
+            continue;
+        }
         let bytes = file_name.as_encoded_bytes();
         if !paths.contains_key(&file_name) && bytes.ends_with(b".material.bin") {
             log::info!("scan_path found a valid shader path!: {:#?}", &path);
