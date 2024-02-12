@@ -1,25 +1,20 @@
-mod android;
+mod aasset_warcrimes;
 mod common;
 mod mc_utils;
-use android::{aasset_hook, fopen_hook};
 use jni_sys::JNI_VERSION_1_6;
-use ndk_sys::AAssetManager;
+use libc::{off64_t, off_t};
+use ndk_sys::AAsset;
 use once_cell::sync::Lazy;
 use plt_rs::{LinkMapView, MutableLinkMap};
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::thread;
 
 static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-fn get_mut_map<'a>() -> MutableLinkMap<'a> {
-    let link_map = LinkMapView::from_dynamic_library("libminecraftpe.so").expect("open link map");
-
-    MutableLinkMap::from_view(link_map)
-}
 #[cfg(not(feature = "dynamic_path"))]
 #[no_mangle]
 pub extern "system" fn JNI_OnLoad(_: *mut libc::c_void, _: *mut libc::c_void) -> libc::c_int {
@@ -97,25 +92,6 @@ fn get_path() -> &'static std::path::Path {
 }
 fn startup() {
     log::info!("Starting up!");
-    let mut mutable_link_map = get_mut_map();
-    let _aaset_orig =  mutable_link_map
-            .hook::<unsafe fn(
-                *mut AAssetManager,
-                *const libc::c_char,
-                libc::c_int,
-            ) -> *mut ndk_sys::AAsset>("AAssetManager_open", aasset_hook as *const _)
-            .unwrap()
-            .unwrap();
-    let mut mutable_link_map = get_mut_map();
-    let _fopen_orig = mutable_link_map
-        .hook::<unsafe fn(*const libc::c_char, *const libc::c_char) -> *mut libc::FILE>(
-            "fopen",
-            fopen_hook as *const _,
-        )
-        .unwrap()
-        .unwrap();
-
-    log::info!("Finished hooking");
     std::panic::set_hook(Box::new(move |panic_info| {
         log::error!("Thread crashed: {}", panic_info);
 
@@ -130,9 +106,71 @@ fn startup() {
         }
         */
     }));
-
+    setup_hooks().expect("Expected hook to work");
+    log::info!("Finished hooking..");
     let _handler = thread::spawn(|| {
         log::info!("Hello from thread");
         common::setup_json_watcher(get_path());
     });
+}
+fn setup_hooks() -> Result<(), plt_rs::PltError> {
+    let link_map = LinkMapView::from_dynamic_library("libminecraftpe.so").unwrap();
+    let mut_lm = MutableLinkMap::from_view(link_map);
+    let _asset_open = mut_lm.hook::<unsafe fn(
+        *mut ndk_sys::AAssetManager,
+        *const libc::c_char,
+        libc::c_int,
+    ) -> AAsset>(
+        "AAssetManager_open",
+        aasset_warcrimes::asset_open as *const _,
+    )?;
+    let _asset_read =
+        mut_lm.hook::<unsafe fn(*mut AAsset, *mut libc::c_void, libc::size_t) -> libc::c_int>(
+            "AAsset_read",
+            aasset_warcrimes::asset_read as *const _,
+        )?;
+    let _aasset_close = mut_lm
+        .hook::<unsafe fn(*mut AAsset)>("AAsset_close", aasset_warcrimes::asset_close as *const _);
+    let _asset_seek = mut_lm.hook::<unsafe fn(*mut AAsset, off_t, libc::c_int) -> off_t>(
+        "AAsset_seek",
+        aasset_warcrimes::asset_seek as *const _,
+    )?;
+    let _asset_seek64 = mut_lm.hook::<unsafe fn(*mut AAsset, off64_t, libc::c_int) -> off64_t>(
+        "AAsset_seek64",
+        aasset_warcrimes::asset_seek64 as *const _,
+    )?;
+    let _asset_len = mut_lm.hook::<unsafe fn(*mut AAsset) -> off_t>(
+        "AAsset_getLength",
+        aasset_warcrimes::asset_length as *const _,
+    )?;
+    let _asset_len64 = mut_lm.hook::<unsafe fn(*mut AAsset) -> off64_t>(
+        "AAsset_getLength64",
+        aasset_warcrimes::asset_length64 as *const _,
+    )?;
+    let _aasset_rem = mut_lm.hook::<unsafe fn(*mut AAsset) -> off_t>(
+        "AAsset_getRemainingLength",
+        aasset_warcrimes::asset_remaining as *const _,
+    )?;
+    let _asset_rem64 = mut_lm.hook::<unsafe fn(*mut AAsset) -> off64_t>(
+        "AAsset_getRemainingLength64",
+        aasset_warcrimes::asset_remaining64 as *const _,
+    )?;
+    let _asset_fd = mut_lm.hook::<unsafe fn(*mut AAsset, *mut off_t, *mut off_t) -> libc::c_int>(
+        "AAsset_openFileDescriptor",
+        aasset_warcrimes::asset_fd_dummy as *const _,
+    )?;
+    let _asset_fd = mut_lm
+        .hook::<unsafe fn(*mut AAsset, *mut off64_t, *mut off64_t) -> libc::c_int>(
+            "AAsset_openFileDescriptor64",
+            aasset_warcrimes::asset_fd_dummy64 as *const _,
+        )?;
+    let _asset_get_buf = mut_lm.hook::<unsafe fn(*mut AAsset) -> *const libc::c_void>(
+        "AAsset_getBuffer",
+        aasset_warcrimes::asset_get_buffer as *const _,
+    )?;
+    let _asset_is_alloc = mut_lm.hook::<unsafe fn(*mut AAsset) -> libc::c_int>(
+        "AAsset_isAllocated",
+        aasset_warcrimes::asset_is_alloc as *const _,
+    )?;
+    Ok(())
 }
