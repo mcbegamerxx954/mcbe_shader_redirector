@@ -145,7 +145,7 @@ pub(crate) unsafe fn asset_remaining(aasset: *mut AAsset) -> off_t {
         Some(file) => file,
         None => return ndk_sys::AAsset_getRemainingLength(aasset),
     };
-    (file.get_ref().len() as u64 - file.position()) as off_t
+    (file.get_ref().len() - file.position() as usize) as off_t
 }
 
 pub(crate) unsafe fn asset_remaining64(aasset: *mut AAsset) -> off64_t {
@@ -154,7 +154,7 @@ pub(crate) unsafe fn asset_remaining64(aasset: *mut AAsset) -> off64_t {
         Some(file) => file,
         None => return ndk_sys::AAsset_getRemainingLength64(aasset),
     };
-    (file.get_ref().len() as u64 - file.position()) as off64_t
+    (file.get_ref().len() - file.position() as usize) as off64_t
 }
 
 pub(crate) unsafe fn asset_close(aasset: *mut AAsset) {
