@@ -86,9 +86,17 @@ fn get_path() -> std::path::PathBuf {
     app_dir.extend(["games", "com.mojang", "minecraftpe"]);
     app_dir
 }
-#[cfg(not(feature = "dynamic_path"))]
-fn get_path() -> &'static std::path::Path {
-    Path::new("/data/user/0/com.mojang.minecraftpe/games/com.mojang/minecraftpe")
+//#[cfg(not(feature = "dynamic_path"))]
+fn get_path() -> std::path::PathBuf {
+    use std::fs;
+    let mut pkgname = fs::read_to_string("/proc/self/cmdline").unwrap();
+    log::info!("pkgname is :{pkgname}");
+    //pkgnames are only ascii
+    let pkgtrim = pkgname.trim_matches(char::from(0));
+    let path = "/data/data/".to_string() + pkgtrim + "/games/com.mojang/minecraftpe";
+    let mut canon_path = fs::canonicalize(path).unwrap();
+    // im fine with this
+    canon_path
 }
 fn startup() {
     log::info!("Starting up!");
