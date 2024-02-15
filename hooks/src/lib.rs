@@ -86,7 +86,7 @@ fn get_path() -> std::path::PathBuf {
     app_dir.extend(["games", "com.mojang", "minecraftpe"]);
     app_dir
 }
-//#[cfg(not(feature = "dynamic_path"))]
+#[cfg(not(feature = "dynamic_path"))]
 fn get_path() -> std::path::PathBuf {
     use std::fs;
     let mut pkgname = fs::read_to_string("/proc/self/cmdline").unwrap();
