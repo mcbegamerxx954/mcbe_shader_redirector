@@ -130,7 +130,7 @@ fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     let mut paths: HashMap<OsString, PathBuf> = HashMap::new();
     for entry in dir_entries.flatten() {
         let path = entry.path();
-        let file_name = entry.file_name();
+        let osfile_name = entry.file_name();
         // Some very important checks are done here
         let metadata = entry.metadata()?;
         // Check if len is larger than usize
@@ -141,10 +141,13 @@ fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
         if !metadata.is_file() {
             continue;
         }
-        let bytes = file_name.as_encoded_bytes();
-        if !paths.contains_key(&file_name) && bytes.ends_with(b".material.bin") {
+        // Mojang won't use non utf8 i know it
+        let Some(file_name) = osfile_name.to_str() else {
+            continue;
+        };
+        if !paths.contains_key(&osfile_name) && file_name.ends_with(".material.bin") {
             log::info!("scan_path found a valid shader path!: {:#?}", &path);
-            paths.insert(file_name, path);
+            paths.insert(osfile_name, path);
         }
     }
     Ok(paths)
