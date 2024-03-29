@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use std::thread;
+use std::{fs, thread};
 
 static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -116,6 +116,14 @@ fn startup() {
     }));
     setup_hooks().expect("Expected hook to work");
     log::info!("Finished hooking..");
+    let path = get_path();
+    if !path.exists() {
+        if let Err(e) = fs::create_dir_all(path) {
+            log::error!("Fatal: path to minecraftpe can not be accesed {e}");
+            log::error!("Quitting..");
+            return;
+        }
+    }
     let _handler = thread::spawn(|| {
         log::info!("Hello from thread");
         common::setup_json_watcher(get_path());

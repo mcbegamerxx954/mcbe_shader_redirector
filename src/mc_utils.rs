@@ -111,7 +111,13 @@ impl DataManager {
 fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     log::trace!("Scanning path: {}", path);
     let path = Path::new(path);
-    let mut pack_files = scan_path(path)?;
+    let mut pack_files = match scan_path(path) {
+        Ok(files) => files,
+        Err(e) => {
+            log::error!("Main path does not have materials: {e}");
+            HashMap::new()
+        }
+    };
     if let Some(subpack) = subpack {
         log::info!("Scanning subpath: {}", &subpack);
         let mut subpath = path.join("subpacks");
