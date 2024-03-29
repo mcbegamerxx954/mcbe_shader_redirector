@@ -24,11 +24,10 @@ pub(crate) fn setup_json_watcher<T: AsRef<Path>>(app_dir: T) {
             continue;
         }
         log::info!("Recieved interesting event: {:#?}", event);
-        debug_assert!(!event.paths.is_empty());
-        let file_name = match event.paths[0].file_name() {
+        let file_name = match event.paths.first().and_then(|p| p.file_name()) {
             Some(file_name) => file_name,
             None => {
-                log::warn!("Event path is not a filename");
+                log::warn!("Event path is empty or with no filename");
                 continue;
             }
         };
