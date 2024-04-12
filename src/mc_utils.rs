@@ -122,10 +122,11 @@ fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, Pa
         log::info!("Scanning subpath: {}", &subpack);
         let mut subpath = path.join("subpacks");
         subpath.push(subpack);
-
-        let sub_files = scan_path(&subpath)?;
-        log::trace!("expanding pack files with :{:#?}", &sub_files);
-        pack_files.extend(sub_files);
+        if subpath.exists() {
+            let sub_files = scan_path(&subpath)?;
+            log::trace!("expanding pack files with :{:#?}", &sub_files);
+            pack_files.extend(sub_files);
+        }
     }
     Ok(pack_files)
 }

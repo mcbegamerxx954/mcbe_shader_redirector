@@ -159,7 +159,7 @@ pub(crate) unsafe fn asset_remaining64(aasset: *mut AAsset) -> off64_t {
 
 pub(crate) unsafe fn asset_close(aasset: *mut AAsset) {
     let mut wanted_assets = WANTED_ASSETS.lock().unwrap();
-    if wanted_assets.remove(&AAssetPtr(aasset)) == None {
+    if wanted_assets.remove(&AAssetPtr(aasset)).is_none() {
         ndk_sys::AAsset_close(aasset);
     }
 }
@@ -183,8 +183,8 @@ pub(crate) unsafe fn asset_fd_dummy(
 ) -> libc::c_int {
     let wanted_assets = WANTED_ASSETS.lock().unwrap();
     match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(_) => return -1,
-        None => return ndk_sys::AAsset_openFileDescriptor(aasset, out_start, out_len),
+        Some(_) => -1,
+        None => ndk_sys::AAsset_openFileDescriptor(aasset, out_start, out_len),
     }
 }
 
@@ -195,15 +195,15 @@ pub(crate) unsafe fn asset_fd_dummy64(
 ) -> libc::c_int {
     let wanted_assets = WANTED_ASSETS.lock().unwrap();
     match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(_) => return -1,
-        None => return ndk_sys::AAsset_openFileDescriptor64(aasset, out_start, out_len),
+        Some(_) => -1,
+        None => ndk_sys::AAsset_openFileDescriptor64(aasset, out_start, out_len),
     }
 }
 
 pub(crate) unsafe fn asset_is_alloc(aasset: *mut AAsset) -> libc::c_int {
     let wanted_assets = WANTED_ASSETS.lock().unwrap();
     match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(_) => return false as libc::c_int,
+        Some(_) => false as libc::c_int,
         None => ndk_sys::AAsset_isAllocated(aasset),
     }
 }
