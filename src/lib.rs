@@ -1,7 +1,6 @@
 mod aasset_warcrimes;
 mod common;
 mod mc_utils;
-use jni_sys::JNI_VERSION_1_6;
 use libc::{off64_t, off_t};
 use ndk_sys::AAsset;
 use once_cell::sync::Lazy;
@@ -16,15 +15,14 @@ static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(not(feature = "dynamic_path"))]
-#[no_mangle]
-pub extern "system" fn JNI_OnLoad(_: *mut libc::c_void, _: *mut libc::c_void) -> libc::c_int {
+#[ctor::ctor]
+fn start_lib() {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
     );
     startup();
-    JNI_VERSION_1_6
 }
-#[cfg(feature = "dynamic_path")]
+#[cfg(feature = "jni_path")]
 #[no_mangle]
 pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _: *mut libc::c_void) -> libc::c_int {
     android_logger::init_once(
@@ -41,10 +39,10 @@ pub extern "system" fn JNI_OnLoad(vm: jni::JavaVM, _: *mut libc::c_void) -> libc
     };
     log::info!("Starting.....");
     startup();
-    JNI_VERSION_1_6
+    jni_sys::JNI_VERSION_1_6
 }
 
-#[cfg(feature = "dynamic_path")]
+#[cfg(feature = "jni_path")]
 fn get_global_context(mut env: jni::JNIEnv) -> jni::objects::JObject {
     let activity_thread = env
         .find_class("android/app/ActivityThread")
@@ -71,7 +69,7 @@ fn get_global_context(mut env: jni::JNIEnv) -> jni::objects::JObject {
         .expect("Expected object from getapplication");
     context
 }
-#[cfg(feature = "dynamic_path")]
+#[cfg(feature = "jni_path")]
 fn get_path() -> std::path::PathBuf {
     use app_dirs2::{app_root, AppDataType, AppInfo};
     const MC_APP_INFO: AppInfo = AppInfo {
@@ -82,51 +80,38 @@ fn get_path() -> std::path::PathBuf {
     // remove some parts that we dont use
     let _ = app_dir.pop();
     let _ = app_dir.pop();
-    // add the path we want to be in
-    app_dir.extend(["games", "com.mojang", "minecraftpe"]);
     app_dir
 }
-#[cfg(not(feature = "dynamic_path"))]
+#[cfg(not(feature = "jni_path"))]
 fn get_path() -> std::path::PathBuf {
-    use std::fs;
-    let mut pkgname = fs::read_to_string("/proc/self/cmdline").unwrap();
+    let pkgname = fs::read_to_string("/proc/self/cmdline").unwrap();
     log::info!("pkgname is :{pkgname}");
     //pkgnames are only ascii
     let pkgtrim = pkgname.trim_matches(char::from(0));
-    let path = "/data/data/".to_string() + pkgtrim + "/games/com.mojang/minecraftpe";
-    let mut canon_path = fs::canonicalize(path).unwrap();
+    let path = "/data/data/".to_string() + pkgtrim;
     // im fine with this
-    canon_path
+    path.into()
 }
 fn startup() {
     log::info!("Starting up!");
     std::panic::set_hook(Box::new(move |panic_info| {
         log::error!("Thread crashed: {}", panic_info);
-
-        // Sadly plt-rs is very mean when it comes to using its stuff
-        /*
-        log::error!("Undoing hooks..");
-        if let Err(e) = get_mut_map().restore(_aaset_orig) {
-            log::error!("Unhooking aaset failed with: {e}");
-        }
-        if let Err(e) = get_mut_map().restore(_fopen_orig) {
-            log::error!("Unhooking fopen failed with: {e}");
-        }
-        */
     }));
     setup_hooks().expect("Expected hook to work");
     log::info!("Finished hooking..");
-    let path = get_path();
+    let mut path = get_path();
+    path.extend(["games", "com.mojang", "minecraftpe"]);
     if !path.exists() {
-        if let Err(e) = fs::create_dir_all(path) {
-            log::error!("Fatal: path to minecraftpe can not be accesed {e}");
+        if let Err(e) = fs::create_dir_all(&path) {
+            log::error!("Fatal: path to minecraftpe cant be created: {e}");
             log::error!("Quitting..");
             return;
         }
     }
+    log::debug!("path is : {:#?}", &path);
     let _handler = thread::spawn(|| {
         log::info!("Hello from thread");
-        common::setup_json_watcher(get_path());
+        common::setup_json_watcher(path);
     });
 }
 fn setup_hooks() -> Result<(), plt_rs::PltError> {

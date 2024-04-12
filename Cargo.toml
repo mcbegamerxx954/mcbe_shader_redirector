@@ -1,3 +1,4 @@
+#cargo-features = ["trim-paths"]
 [package]
 name = "mcbe_r"
 version = "0.1.0"
@@ -19,13 +20,17 @@ serde = { version = "1.0.196", features = ["derive"] }
 app_dirs2 = { version = "2.5.5", optional = true }
 jni = { version = "0.21.1", optional = true }
 ndk-context = { version = "0.1.1", optional = true }
+ctor = "0.2.6"
 
 # I will get rid of you one day.
 jni-sys = "0.3.0"
 
 [features]
-default = ["dynamic_path"]
-dynamic_path = ["dep:jni", "dep:app_dirs2", "dep:ndk-context"]
+default = ["jni_path"]
+jni_path = ["dep:jni", "dep:app_dirs2", "dep:ndk-context"]
 
 [lib]
 crate-type = ["cdylib"]
+
+#[profile.perf]
+#trim-paths = "all"
