@@ -1,12 +1,10 @@
 mod hooks;
 use libc::c_void;
 use plt_rs::{collect_modules, DynamicLibrary, DynamicSymbols};
-use std::env::home_dir;
 use std::ffi::CStr;
 use std::{fs, mem, ptr};
-
 use super::errors::HookError;
-pub unsafe fn get_current_username() -> Option<String> {
+unsafe fn get_current_username() -> Option<String> {
     let amt = match libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) {
         n if n < 0 => 512 as usize,
         n => n as usize,
@@ -33,6 +31,11 @@ pub unsafe fn get_current_username() -> Option<String> {
 pub fn parse_current_aid(name: String) -> Option<i64> {
     name.strip_prefix('u')
         .and_then(|n| n.split_once('_').map(|(s, _)| s.parse::<i64>().unwrap()))
+}
+pub fn setup_logging() {
+    android_logger::init_once(
+    android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
+    );
 }
 
 pub fn get_path() -> std::path::PathBuf {
@@ -187,7 +190,7 @@ fn replace_plt_functions(
     let base_addr = dyn_lib.library().addr();
     for (fn_name, replacement) in functions {
         let Some(fn_plt) = try_find_function(dyn_lib, dyn_lib.symbols().unwrap(), fn_name) else {
-            return HookError::MissingSym(fn_name.to_string());
+            return Err(HookError::MissingSym(fn_name.to_string()));
         };
         log::info!("Hooking {}...", fn_name);
         replace_plt_function(base_addr, fn_plt.r_offset as usize, *replacement)?;
@@ -209,9 +212,9 @@ fn replace_plt_function(
         let prot_res = libc::mprotect(plt_page, page_size, libc::PROT_WRITE | libc::PROT_READ);
         if prot_res != 0 {
             println!("protection res: {prot_res}");
-            Err(HookError::OsError(
+            return Err(HookError::OsError(
                 "Mprotect error on setting rw".to_string(),
-            ))
+            ));
         }
 
         // Replace the function address
@@ -220,9 +223,9 @@ fn replace_plt_function(
         // Set the memory page protection back to read only
         let prot_res = libc::mprotect(plt_page, page_size, libc::PROT_READ);
         if prot_res != 0 {
-            Err(HookError::OsError(
+            return Err(HookError::OsError(
                 "Mprotect error on setting read only".to_string(),
-            ))
+            ));
         }
 
         Ok(previous_address as *const c_void)

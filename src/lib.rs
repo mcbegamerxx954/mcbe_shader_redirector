@@ -2,11 +2,8 @@ mod common;
 mod mc_utils;
 mod platform;
 use once_cell::sync::Lazy;
-use platform::get_path;
-use platform::setup_hooks;
-
 use std::collections::HashMap;
-use std::ffi::{CStr, OsString};
+use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::{fs, thread};
@@ -16,9 +13,7 @@ static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
 
 #[ctor::ctor]
 fn start_lib() {
-    android_logger::init_once(
-        android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
-    );
+    platform::setup_logging();
     startup();
 }
 
@@ -27,9 +22,9 @@ fn startup() {
     std::panic::set_hook(Box::new(move |panic_info| {
         log::error!("Thread crashed: {}", panic_info);
     }));
-    setup_hooks().unwrap();
+    platform::setup_hooks().unwrap();
     log::info!("Finished hooking..");
-    let mut path = get_path();
+    let mut path = platform::get_path();
     path.extend(["games", "com.mojang", "minecraftpe"]);
     log::info!("non verified path: {:#?}", &path);
     if !path.exists() {
