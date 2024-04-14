@@ -1,5 +1,5 @@
 use core::fmt;
-
+#[derive(Debug)]
 pub enum HookError {
     MissingLib(String),
     MissingSym(String),
