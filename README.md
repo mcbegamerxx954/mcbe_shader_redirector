@@ -23,14 +23,30 @@ the tutorial is not 100% guaranteed to work yet and the APK might crash on some 
 + Now you should have your lib in target folder in repo dir
 
 ## Tutorial on how to use:
-step 1: get the .so for your arch and rename it to "libmcbe_r.so"
+step 1: Go to releases and open the latest one
 
-step 2: place it in the mcbe APK at this path: "libs/(arch)/"
+step 2: Download the .so for your arch and rename it to "libmcbe_r.so"
 
-step 3: edit classes.dex in mcbe and go to the com.mojang.minecraftpe.MainActivity class and search function OnCreate and paste this inside of it :
+step 2: Place it in the mc APK at this path: "libs/(arch)/"
+
+step 3: Make the library start with mc by any of these methods:
+
+Method 1 (Dex):
++ Open/Extract classes.dex in minecraft APK
++ Search the com.mojang.minecraftpe.MainActivity class 
++ Inside of it, search the function OnCreate and paste this inside of it:
 ```
 const-string v0, "mcbe_r"
 invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
+```
+
+Method 2 (Patchelf, untested):
++ Install patchelf
++ Extract the libminecraftpe.so library in "libs/(arch)"
++ Run patchelf on it to make libmcbe_r a needed library:
+(replace path/to/ with the path to the library)
+```
+patchelf path/to/libminecraftpe.so --add-needed libmcbe_r.so
 ```
 
 step 4: now if you did everything correctly you should have a patched mcbe that redirects shaders.
