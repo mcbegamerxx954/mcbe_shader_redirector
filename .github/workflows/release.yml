@@ -4,8 +4,7 @@ permissions:
   contents: read
 
 on:
-  release:
-    types: [created]
+  push:
 
 jobs:
   build:
@@ -18,17 +17,25 @@ jobs:
           - i686-linux-android
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Rust
+        run: rustup update stable
       - uses: actions/checkout@v4
       - name: Install cross-compilation tools
         uses: taiki-e/setup-cross-toolchain-action@v1
         with:
           target: ${{ matrix.target }}
-      - uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
-          # Note that glob pattern is not supported yet.
-          bin: libmcbe_r
-          # (optional) Target triple, default is host triple.
-          target: ${{ matrix.target }}
-          # (required) GitHub token for uploading assets to GitHub Releases.
-          token: ${{ secrets.TOKEN }}
+      - run: cargo build --release
+      - name: Upload library
+        - uses: actions/upload-artifact@v4
+          with:
+            name: mcbe_r-${{ matrix.target }}
+            path: target/${{ matrix.target }}/libmcbe_r.so
+
+
+
+
+
+
+
+
+
