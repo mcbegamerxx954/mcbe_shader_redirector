@@ -35,7 +35,7 @@ Method 1 (Dex):
 + Open/Extract classes.dex in minecraft APK
 + Search the com.mojang.minecraftpe.MainActivity class 
 + Inside of it, search the function OnCreate and paste this inside of it:
-```
+```smali
 const-string v0, "mcbe_r"
 invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
 ```
@@ -45,7 +45,7 @@ Method 2 (Patchelf, untested):
 + Extract the libminecraftpe.so library in "libs/(arch)"
 + Run patchelf on it to make libmcbe_r a needed library:
 (replace path/to/ with the path to the library)
-```
+```bash
 patchelf path/to/libminecraftpe.so --add-needed libmcbe_r.so
 ```
 
