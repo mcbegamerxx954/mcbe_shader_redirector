@@ -2,8 +2,6 @@ name: Ci-Build
 
 on:
   push:
-    tags:
-      - "*"
 
 jobs:
   build:
@@ -25,16 +23,9 @@ jobs:
           target: ${{ matrix.target }} 
       - name: build
         run: cargo build --release
-      - name: Build Changelog
-        id: github_release
-        uses: mikepenz/release-changelog-builder-action@v4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Prepare lib for release
-        run: mv target/${{ matrix.target }}/release/libmcbe_r.so libmcbe_r_${{ matrix.target }}.so
-      - name: Create Release
-        uses: mikepenz/action-gh-release@v0.2.0-a03 #softprops/action-gh-release
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          body: ${{steps.github_release.outputs.changelog}}
-          files: libmcbe_r_${{ matrix.target }}.so
+          name: mcbe_r-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/libmcbe_r.so
 
