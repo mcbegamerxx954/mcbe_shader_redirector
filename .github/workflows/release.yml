@@ -24,7 +24,8 @@ jobs:
         uses: taiki-e/setup-cross-toolchain-action@v1
         with:
           target: ${{ matrix.target }}
-      - run: cargo build --release
+      - name: Compile
+        run: cargo build --release
       - name: Upload library
         - uses: actions/upload-artifact@v4
           with:
