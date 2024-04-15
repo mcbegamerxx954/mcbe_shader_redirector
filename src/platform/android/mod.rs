@@ -191,6 +191,7 @@ fn replace_plt_functions(
     for (fn_name, replacement) in functions {
         let Some(fn_plt) = try_find_function(dyn_lib, dyn_lib.symbols().unwrap(), fn_name) else {
             log::warn!("Missing symbol: {fn_name}");
+            continue;
         };
         log::info!("Hooking {}...", fn_name);
         replace_plt_function(base_addr, fn_plt.r_offset as usize, *replacement)?;
