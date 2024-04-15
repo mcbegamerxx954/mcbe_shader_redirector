@@ -13,8 +13,10 @@ static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
 
 #[ctor::ctor]
 fn start_lib() {
-    platform::setup_logging();
-    startup();
+    std::panic::catch_unwind(|| {
+        platform::setup_logging();
+        startup();
+    });
 }
 
 fn startup() {
