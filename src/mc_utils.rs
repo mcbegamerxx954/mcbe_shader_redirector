@@ -30,8 +30,6 @@ struct GlobalPack {
 
 #[derive(Debug)]
 pub enum DataError {
-    //    #[error("Getting minecraft dir failed")]
-    //    AppDirsError(#[from] app_dirs2::AppDirsError);
     JsonError(serde_json::Error),
     IoError(io::Error),
 }
@@ -97,9 +95,8 @@ impl DataManager {
                         continue;
                     }
                 };
-                log::info!("scan pack paths: {:#?}", &paths);
                 paths.retain(|k, _| !final_paths.contains_key(k));
-                log::info!("unique paths are: {:#?}", &paths);
+                log::info!("shader paths are: {:#?}", &paths);
                 final_paths.extend(paths);
             }
         }
@@ -110,36 +107,25 @@ impl DataManager {
 }
 fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     log::trace!("Scanning path: {}", path);
-    let path = Path::new(path);
-    let mut pack_files = match scan_path(path) {
-        Ok(files) => files,
-        Err(e) => {
-            log::error!("Main path does not have materials: {e}");
-            HashMap::new()
-        }
-    };
+    let mut found_paths = HashMap::new();
+    let mut main_path = Path::new(path).join("renderer");
+    main_path.push("materials");
+    if main_path.is_dir() {
+        found_paths.extend(scan_path(&main_path)?);
+        log::info!("Main path had shaders");
+    }
     if let Some(subpack) = subpack {
-        log::info!("Scanning subpath: {}", &subpack);
-        let mut subpath = path.join("subpacks");
-        subpath.push(subpack);
-        if subpath.exists() {
-            let sub_files = match scan_path(&subpath)? {
-                Ok(sub_files) => sub_files,
-                Err(e) => {
-                    log::warn!("Subpath scanning error {e}");
-                    HashMap::new()
-                }
-            };
-            log::trace!("expanding pack files with: {:#?}", &sub_files);
-            pack_files.extend(sub_files);
+        let mut subpath = Path::new(path).join("subpacks");
+        subpath.extend([&subpack, "renderer", "materials"]);
+        if subpath.is_dir() {
+            let sub_files = scan_path(&subpath)?;
+            found_paths.extend(sub_files);
         }
     }
-    Ok(pack_files)
+    Ok(found_paths)
 }
 fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
-    let mut path = path.join("renderer");
-    path.push("materials");
-    let dir_entries = fs::read_dir(path)?;
+    let dir_entries = fs::read_dir(path)?;    
     let mut paths: HashMap<OsString, PathBuf> = HashMap::new();
     for entry in dir_entries.flatten() {
         let path = entry.path();
@@ -165,7 +151,6 @@ fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     }
     Ok(paths)
 }
-
 pub(crate) fn vec_from_json<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, DataError> {
     let json_file = fs::read_to_string(path)?;
     let json_vec: Vec<T> = serde_json::from_str(&json_file)?;
