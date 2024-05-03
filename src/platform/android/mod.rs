@@ -1,12 +1,12 @@
 mod hooks;
+use super::errors::HookError;
 use libc::c_void;
 use plt_rs::{collect_modules, DynamicLibrary, DynamicSymbols};
 use std::ffi::CStr;
 use std::{fs, mem, ptr};
-use super::errors::HookError;
 unsafe fn get_current_username() -> Option<String> {
     let amt = match libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) {
-        n if n < 0 => 512 as usize,
+        n if n < 0 => 512_usize,
         n => n as usize,
     };
     let mut buf = Vec::with_capacity(amt);
@@ -34,7 +34,7 @@ pub fn parse_current_aid(name: String) -> Option<i64> {
 }
 pub fn setup_logging() {
     android_logger::init_once(
-    android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
+        android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
     );
 }
 
@@ -52,7 +52,7 @@ pub fn get_path() -> std::path::PathBuf {
     path.into()
 }
 pub fn setup_hooks() -> Result<(), HookError> {
-    const LIBNAME: &'static str = "libminecraftpe";
+    const LIBNAME: &str = "libminecraftpe";
     let lib_entry = match find_lib(LIBNAME) {
         Some(lib) => lib,
         None => return Err(HookError::MissingLib(LIBNAME.to_string())),
@@ -158,8 +158,7 @@ fn try_find_function<'a>(
                     .resolve_name(e.symbol_index() as usize, string_table)
                     .map(|s| (e, s))
             })
-            .filter(|(_, s)| s == target_name)
-            .next()
+            .find(|(_, s)| s == target_name)
             .map(|(target_function, _)| target_function)
         {
             return Some(symbol);
@@ -174,8 +173,7 @@ fn try_find_function<'a>(
                     .resolve_name(e.symbol_index() as usize, string_table)
                     .map(|s| (e, s))
             })
-            .filter(|(_, s)| s == target_name)
-            .next()
+            .find(|(_, s)| s == target_name)
             .map(|(target_function, _)| target_function)
         {
             return Some(symbol);
