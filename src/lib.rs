@@ -15,7 +15,7 @@ static SHADER_PATHS: Lazy<Mutex<HashMap<OsString, PathBuf>>> =
 // unwinding up here is ub, + give a good panic message
 #[ctor::ctor]
 fn ctor() {
-    std::thread::spawn(safe_setup);
+    thread::spawn(safe_setup);
 }
 // Make sure that ub cant happen when unwinding
 // and provide usefull info
@@ -47,6 +47,6 @@ fn startup() {
             return;
         }
     }
-    log::debug!("path is : {:#?}", &path);
+    log::debug!("path is: {:#?}", &path);
     common::setup_json_watcher(path);
 }

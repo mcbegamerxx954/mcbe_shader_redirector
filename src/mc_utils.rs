@@ -118,14 +118,13 @@ fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, Pa
         let mut subpath = Path::new(path).join("subpacks");
         subpath.extend([&subpack, "renderer", "materials"]);
         if subpath.is_dir() {
-            let sub_files = scan_path(&subpath)?;
-            found_paths.extend(sub_files);
+            found_paths.extend(scan_path(&subpath)?);
         }
     }
     Ok(found_paths)
 }
 fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
-    let dir_entries = fs::read_dir(path)?;    
+    let dir_entries = fs::read_dir(path)?;
     let mut paths: HashMap<OsString, PathBuf> = HashMap::new();
     for entry in dir_entries.flatten() {
         let path = entry.path();
