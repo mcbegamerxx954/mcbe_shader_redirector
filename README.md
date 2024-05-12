@@ -4,6 +4,11 @@ for now it only supports android
 
 the tutorial is not 100% guaranteed to work yet and the APK might crash on some phones.
 
+## Confirmed working with
++ 1.20.73
++ 1.20.81 (shaders are broken but it does load successfully)
+
+
 ## How to build(pc):
 + Install rust using [rustup](https://rustup.rs/) if you dont have it 
 + Download the ndk
@@ -39,6 +44,12 @@ Method 1 (Dex):
 const-string v0, "mcbe_r"
 invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
 ```
+![image](https://github.com/mcbegamerxx954/mcbe_shader_redirector/assets/40156662/10606e03-4d63-4533-89f3-b8a392cd5ef1)
+<br>
+![image](https://github.com/mcbegamerxx954/mcbe_shader_redirector/assets/40156662/5b9ab661-c54f-4982-9baf-4ad4b3006a4b)
+<br>
+<sup><sub>Done using [MT Manager](https://mt2.cn/download/)</sub></sup>
+
 
 Method 2 (Patchelf, untested):
 + Install patchelf
