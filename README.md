@@ -1,6 +1,6 @@
 # NOTICE
 This does not work properly and i dont know if it ever will
-because minecraft precaches worlds (yeah)
+because minecraft caches worlds (yeah)
 
 So i will not polish this till i find a way to fix that
 
