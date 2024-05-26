@@ -2,6 +2,9 @@
 This crate is made to redirect MCBE shaders to ones from resource packs externally so that it can work with any mcbe version and even multiple platforms.
 for now it only supports android
 
+> [!NOTE]
+> This repo is used by [draco-injector](https://github.com/mcbegamerxx954/draco-injector).
+
 the tutorial is not 100% guaranteed to work yet and the APK might crash on some phones.
 
 ## Confirmed working with
