@@ -5,7 +5,7 @@ for now it only supports android
 > [!NOTE]
 > This repo is used by [draco-injector](https://github.com/mcbegamerxx954/draco-injector).
 
-the tutorial is not 100% guaranteed to work yet and the APK might crash on some phones.
+The redirector is still unstable and might have some bugs or crashes, please report those in this repo.
 
 ## Confirmed working with
 + 1.20.73
