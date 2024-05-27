@@ -51,7 +51,7 @@ invoke-static {v0}, Ljava/lang/System;->loadLibrary(Ljava/lang/String;)V
 <sup><sub>Done using [MT Manager](https://mt2.cn/download/)</sub></sup>
 
 
-Method 2 (Patchelf, untested):
+Method 2 (Patchelf):
 + Install patchelf
 + Extract the libminecraftpe.so library in "libs/(arch)"
 + Run patchelf on it to make libmcbe_r a needed library:
