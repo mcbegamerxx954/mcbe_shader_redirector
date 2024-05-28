@@ -53,8 +53,10 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
 
             if current_location != location {
                 let new_path = get_storage_path(location);
-                data_manager = DataManager::init_data(&new_path);
+
                 if new_path.join("valid_resource_packs.json").exists() {
+                    data_manager = DataManager::init_data(&new_path);
+
                     let grp_json = new_path.join("global_resource_packs.json");
                     if !grp_json.exists() {
                         File::create(grp_json).unwrap();
