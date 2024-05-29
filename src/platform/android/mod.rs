@@ -32,7 +32,13 @@ pub unsafe fn get_current_username() -> Option<String> {
     }
 }
 pub fn get_storage_location(options_path: &Path) -> Option<StorageLocation> {
-    let int = parse_storage_location(options_path).unwrap();
+    let int = match parse_storage_location(options_path) {
+        Ok(location) => location,
+        Err(e) => {
+            log::info!("Cant parse storage: {e}");
+            return None;
+        }
+    };
     StorageLocation::from_i8(int)
 }
 pub fn parse_current_aid(name: String) -> Option<i64> {
@@ -60,10 +66,9 @@ pub fn get_storage_path(location: StorageLocation) -> std::path::PathBuf {
             format!("/storage/emulated/{}", userid)
                 + "/Android/data/"
                 + pkgtrim
-                + "/files/games/com.mojang/minecraftpe"
         }
     };
-    // im fine with this
+    let result = result + "/files/games/com.mojang/minecraftpe";
     result.into()
 }
 

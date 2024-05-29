@@ -8,7 +8,10 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn setup_json_watcher(path: PathBuf) {
-    let current_location = get_storage_location(&path.join("options.txt")).unwrap();
+    let current_location = match get_storage_location(&path.join("options.txt")) {
+        Some(yayy) => yayy,
+        None => StorageLocation::Internal,
+    };
     let mut path = get_storage_path(current_location);
     log::info!("location = {current_location:#?}");
     if !path.join("valid_known_packs.json").exists() {
