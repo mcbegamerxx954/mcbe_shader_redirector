@@ -63,12 +63,9 @@ pub fn get_storage_path(location: StorageLocation) -> std::path::PathBuf {
     let result = match location {
         StorageLocation::Internal => format!("/data/user/{userid}/") + pkgtrim,
         StorageLocation::External => {
-            format!("/storage/emulated/{}", userid)
-                + "/Android/data/"
-                + pkgtrim
+            format!("/storage/emulated/{}", userid) + "/Android/data/" + pkgtrim + "/files/"
         }
     };
-    let result = result + "/files/games/com.mojang/minecraftpe";
     result.into()
 }
 
