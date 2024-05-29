@@ -18,6 +18,7 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
         log::warn!("Options storage invalid, cowardly defaulting to internal");
         path = get_storage_path(StorageLocation::Internal)
     }
+    path.extend(["games", "com.mojang", "minecraftpe"]);
     let mut data_manager = DataManager::init_data(&path);
     let (sender, reciever) = crossbeam_channel::unbounded();
     let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
