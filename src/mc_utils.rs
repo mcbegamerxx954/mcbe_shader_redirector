@@ -20,6 +20,7 @@ pub struct ValidPack {
     file_version: Option<u32>,
     uuid: String,
     path: String,
+    version: String,
 }
 
 // A active global pack
@@ -27,6 +28,7 @@ pub struct ValidPack {
 struct GlobalPack {
     pack_id: String,
     subpack: Option<String>,
+    version: Vec<u32>,
 }
 
 #[derive(Debug, Error)]
@@ -66,11 +68,11 @@ impl DataManager {
         log::info!("global_packs parsed: {:#?}", global_packs);
         let mut final_paths = HashMap::new();
         for pack in global_packs {
-            if let Some(vp) = self.valid_packs.iter().find(|vp| pack.pack_id == vp.uuid) {
+            if let Some(vp) = find_valid_pack(&pack, &self.valid_packs) {
                 let mut paths = match scan_pack(&vp.path, pack.subpack) {
                     Ok(paths) => paths,
                     Err(e) => {
-                        log::error!("scan paths error: {e}");
+                        log::error!("Path scanning error: {e}");
                         continue;
                     }
                 };
@@ -83,6 +85,27 @@ impl DataManager {
         Ok(final_paths)
     }
     // Get shaders in pack directory
+}
+fn find_valid_pack<'a>(
+    global_pack: &GlobalPack,
+    valid_packs: &'a Vec<ValidPack>,
+) -> Option<&'a ValidPack> {
+    for valid_pack in valid_packs {
+        if valid_pack.uuid == global_pack.pack_id
+            && valid_pack.version == process_version_array(&global_pack.version)
+        {
+            return Some(valid_pack);
+        }
+    }
+    None
+}
+fn process_version_array(version: &Vec<u32>) -> String {
+    let mut version_str = String::new();
+    for int in version {
+        version_str.push_str(&format!("{int}."))
+    }
+    let _ = version_str.pop();
+    version_str
 }
 fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, PathBuf>, io::Error> {
     log::trace!("Scanning path: {}", path);

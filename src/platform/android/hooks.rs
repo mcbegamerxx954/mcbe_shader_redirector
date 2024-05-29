@@ -1,6 +1,7 @@
 use crate::SHADER_PATHS;
 use libc::{off64_t, off_t};
 use ndk_sys::{AAsset, AAssetManager};
+
 use once_cell::sync::Lazy;
 use std::{
     collections::HashMap,
@@ -23,6 +24,7 @@ static WANTED_ASSETS: Lazy<Mutex<HashMap<AAssetPtr, Cursor<Vec<u8>>>>> =
 
 // This is unsafe because it calls stuff that can give us some nasty UB
 // But we let ub happen because honestly this is a hook
+
 pub(crate) unsafe fn asset_open(
     man: *mut AAssetManager,
     fname: *const libc::c_char,
@@ -165,6 +167,7 @@ pub(crate) unsafe fn asset_close(aasset: *mut AAsset) {
 }
 
 // i hate this so much
+
 pub(crate) unsafe fn asset_get_buffer(aasset: *mut AAsset) -> *const libc::c_void {
     let mut wanted_assets = WANTED_ASSETS.lock().unwrap();
     let file = match wanted_assets.get_mut(&AAssetPtr(aasset)) {
