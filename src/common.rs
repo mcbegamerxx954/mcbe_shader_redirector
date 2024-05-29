@@ -1,16 +1,34 @@
 use crate::mc_utils::DataManager;
+use crate::platform::android::{self, get_storage_location, get_storage_path};
+use crate::platform::storage::StorageLocation;
 use crate::SHADER_PATHS;
 use notify::event::{AccessKind, AccessMode, EventKind};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
-use std::path::Path;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 
-pub(crate) fn setup_json_watcher<T: AsRef<Path>>(app_dir: T) {
-    let path: &Path = app_dir.as_ref();
-    let mut data_manager = DataManager::init_data(path);
+pub(crate) fn setup_json_watcher(path: PathBuf) {
+    let current_location = match get_storage_location(&path.join("options.txt")) {
+        Some(yayy) => yayy,
+        None => StorageLocation::Internal,
+    };
+    let mut path = get_storage_path(current_location);
+    path.extend(["games", "com.mojang", "minecraftpe"]);
+    log::info!("location = {current_location:#?}");
+    if !path.join("valid_known_packs.json").exists() {
+        log::warn!("Options storage invalid, cowardly defaulting to internal");
+        path = get_storage_path(StorageLocation::Internal);
+        path.extend(["games", "com.mojang", "minecraftpe"]);
+    }
+
+    let mut data_manager = DataManager::init_data(&path);
     let (sender, reciever) = crossbeam_channel::unbounded();
     let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
-    watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
-
+    setup_watches(
+        &mut watcher,
+        &path,
+        &["valid_known_packs.json", "global_resource_packs.json"],
+    );
     for event in reciever {
         let event = match event {
             Ok(event) => event,
@@ -28,6 +46,7 @@ pub(crate) fn setup_json_watcher<T: AsRef<Path>>(app_dir: T) {
             log::warn!("Event path is empty or with no filename");
             continue;
         };
+
         if file_name == "global_resource_packs.json" {
             log::info!("Active rpacks changed, updating..");
             update_global_sp(&mut data_manager, false);
@@ -57,4 +76,13 @@ fn update_global_sp(dataman: &mut DataManager, full: bool) {
     };
     *locked_sp = data;
     log::info!("Updated global shader paths: {:#?}", &locked_sp);
+}
+fn setup_watches(watcher: &mut impl Watcher, path: &Path, files: &[&str]) {
+    for file in files {
+        let path = path.join(file);
+        if !path.exists() {
+            File::create(&path).unwrap();
+        }
+        watcher.watch(&path, RecursiveMode::NonRecursive).unwrap();
+    }
 }
