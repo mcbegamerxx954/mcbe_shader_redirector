@@ -8,20 +8,20 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 pub(crate) fn setup_json_watcher(path: PathBuf) {
-    let mut path = path;
-    let mut current_location = StorageLocation::Internal;
+    let current_location = get_storage_location(&path.join("options.txt")).unwrap();
+    let mut path = get_storage_path(current_location);
+    log::info!("location = {current_location:#?}");
+    if !path.join("valid_known_packs.json").exists() {
+        log::warn!("Options storage invalid, cowardly defaulting to internal");
+        path = get_storage_path(StorageLocation::Internal)
+    }
     let mut data_manager = DataManager::init_data(&path);
-
     let (sender, reciever) = crossbeam_channel::unbounded();
     let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
     setup_watches(
         &mut watcher,
         &path,
-        &[
-            "options.txt",
-            "valid_known_packs.json",
-            "global_resource_packs.json",
-        ],
+        &["valid_known_packs.json", "global_resource_packs.json"],
     );
     for event in reciever {
         let event = match event {
@@ -41,34 +41,6 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
             continue;
         };
 
-        if file_name == "options.txt" {
-            let location = match crate::platform::get_storage_location(event.paths.first().unwrap())
-            {
-                Some(storage_location) => storage_location,
-                None => {
-                    log::error!("Cant parse storage location!");
-                    continue;
-                }
-            };
-
-            if current_location != location {
-                let new_path = get_storage_path(location);
-
-                if new_path.join("valid_resource_packs.json").exists() {
-                    data_manager = DataManager::init_data(&new_path);
-
-                    let grp_json = new_path.join("global_resource_packs.json");
-                    if !grp_json.exists() {
-                        File::create(grp_json).unwrap();
-                    }
-                    switch_grpk_watch(&path, &new_path, &mut watcher);
-                    current_location = location;
-                    path = new_path;
-                } else {
-                    log::warn!("No pack data in {location:#?}. not switching");
-                }
-            }
-        }
         if file_name == "global_resource_packs.json" {
             log::info!("Active rpacks changed, updating..");
             update_global_sp(&mut data_manager, false);
@@ -78,21 +50,6 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
             update_global_sp(&mut data_manager, true);
         }
     }
-}
-fn switch_grpk_watch<W>(old: &Path, new: &Path, watcher: &mut W)
-where
-    W: Watcher,
-{
-    let grpks = "global_resource_packs.json";
-    let vrpks = "valid_resource_packs.json";
-    watcher.unwatch(&old.join(grpks)).unwrap();
-    watcher.unwatch(&old.join(vrpks)).unwrap();
-    watcher
-        .watch(&new.join(grpks), RecursiveMode::NonRecursive)
-        .unwrap();
-    watcher
-        .watch(&new.join(vrpks), RecursiveMode::NonRecursive)
-        .unwrap();
 }
 fn update_global_sp(dataman: &mut DataManager, full: bool) {
     let mut locked_sp = SHADER_PATHS
