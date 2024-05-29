@@ -19,6 +19,7 @@ serde = { version = "1.0.196", features = ["derive"] }
 ctor = "0.2.6"
 plt-rs = "0.2.0"
 backtrace = "0.3.71"
+thiserror = "1.0.61"
 
 
 

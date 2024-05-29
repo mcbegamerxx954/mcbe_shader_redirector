@@ -1,10 +1,14 @@
 mod hooks;
+pub mod storage;
+use self::storage::{parse_storage_location, StorageLocation};
+
 use super::errors::HookError;
 use libc::c_void;
 use plt_rs::{collect_modules, DynamicLibrary, DynamicSymbols};
 use std::ffi::CStr;
+use std::path::Path;
 use std::{fs, mem, ptr};
-unsafe fn get_current_username() -> Option<String> {
+pub unsafe fn get_current_username() -> Option<String> {
     let amt = match libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) {
         n if n < 0 => 512_usize,
         n => n as usize,
@@ -27,7 +31,16 @@ unsafe fn get_current_username() -> Option<String> {
         _ => None,
     }
 }
-
+pub fn get_storage_location(options_path: &Path) -> Option<StorageLocation> {
+    let int = match parse_storage_location(options_path) {
+        Ok(location) => location,
+        Err(e) => {
+            log::info!("Cant parse storage: {e}");
+            return None;
+        }
+    };
+    StorageLocation::from_i8(int)
+}
 pub fn parse_current_aid(name: String) -> Option<i64> {
     name.strip_prefix('u')
         .and_then(|n| n.split_once('_').map(|(s, _)| s.parse::<i64>().unwrap()))
@@ -37,20 +50,30 @@ pub fn setup_logging() {
         android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
     );
 }
-
-pub fn get_path() -> std::path::PathBuf {
+// Get the full path for a storage location
+pub fn get_storage_path(location: StorageLocation) -> std::path::PathBuf {
     let pkgname = fs::read_to_string("/proc/self/cmdline").unwrap();
-    log::info!("pkgname is :{pkgname}");
+    log::info!("Package id: {pkgname}");
     //pkgnames are only ascii
     let username = unsafe { get_current_username().unwrap() };
-    log::info!("username is: {}", &username);
+    log::info!("Unix username: {username}");
     let userid = parse_current_aid(username).unwrap();
+    log::info!("User id: {userid}");
     let pkgtrim = pkgname.trim_matches(char::from(0));
-    let path = format!("/data/user/{}/", userid) + pkgtrim;
-    log::info!("Current user: {userid}");
-    // im fine with this
-    path.into()
+    let result = match location {
+        StorageLocation::Internal => format!("/data/user/{userid}/") + pkgtrim,
+        StorageLocation::External => {
+            format!("/storage/emulated/{}", userid) + "/Android/data/" + pkgtrim + "/files/"
+        }
+    };
+    result.into()
 }
+
+// Get app directory for the current platform
+pub fn get_path() -> std::path::PathBuf {
+    get_storage_path(StorageLocation::Internal)
+}
+// Setup asset hooks
 pub fn setup_hooks() -> Result<(), HookError> {
     const LIBNAME: &str = "libminecraftpe";
     let lib_entry = match find_lib(LIBNAME) {
@@ -210,7 +233,7 @@ fn replace_plt_function(
         // Set the memory page to read, write
         let prot_res = libc::mprotect(plt_page, page_size, libc::PROT_WRITE | libc::PROT_READ);
         if prot_res != 0 {
-            println!("protection res: {prot_res}");
+            println!("Protection edit result: {prot_res}");
             return Err(HookError::OsError(
                 "Mprotect error on setting rw".to_string(),
             ));
