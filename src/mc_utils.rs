@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 use thiserror::Error;
+use walkdir::WalkDir;
 
 // Keeps track and manages data about the minecraft Resource Pack Structure
 pub struct DataManager {
@@ -69,7 +70,11 @@ impl DataManager {
         let mut final_paths = HashMap::new();
         for pack in global_packs {
             if let Some(vp) = find_valid_pack(&pack, &self.valid_packs) {
-                let mut paths = match scan_pack(&vp.path, pack.subpack) {
+                let Some(path) = handle_weird_directory(Path::new(&vp.path)) else {
+                    log::warn!("Did not find pack in path... skipping");
+                    continue;
+                };
+                let mut paths = match scan_pack(&path, pack.subpack) {
                     Ok(paths) => paths,
                     Err(e) => {
                         log::error!("Path scanning error: {e}");
@@ -107,10 +112,20 @@ fn process_version_array(version: &Vec<u32>) -> String {
     let _ = version_str.pop();
     version_str
 }
-fn scan_pack(path: &str, subpack: Option<String>) -> Result<HashMap<OsString, PathBuf>, io::Error> {
-    log::trace!("Scanning path: {}", path);
+fn handle_weird_directory(path: &Path) -> Option<PathBuf> {
+    WalkDir::new(path)
+        .into_iter()
+        .flatten()
+        .find(|e| e.file_name().as_encoded_bytes() == b"manifest.json")
+        .and_then(|e| e.path().parent().and_then(|e| Some(e.to_path_buf())))
+}
+fn scan_pack(
+    path: &Path,
+    subpack: Option<String>,
+) -> Result<HashMap<OsString, PathBuf>, io::Error> {
+    log::trace!("Scanning path: {:#?}", path);
     let mut found_paths = HashMap::new();
-    let mut main_path = Path::new(path).join("renderer");
+    let mut main_path = path.join("renderer");
     main_path.push("materials");
     if main_path.is_dir() {
         found_paths.extend(scan_path(&main_path)?);
