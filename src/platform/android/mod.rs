@@ -6,8 +6,10 @@ use super::errors::HookError;
 use libc::c_void;
 use plt_rs::{collect_modules, DynamicLibrary, DynamicSymbols};
 use std::ffi::CStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::{fs, mem, ptr};
+static EXT_JNI_PATH: OnceLock<String> = OnceLock::new();
 pub unsafe fn get_current_username() -> Option<String> {
     let amt = match libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) {
         n if n < 0 => 512_usize,
@@ -31,6 +33,18 @@ pub unsafe fn get_current_username() -> Option<String> {
         _ => None,
     }
 }
+
+#[no_mangle]
+extern "C" fn Java_com_mojang_minecraftpe_MainActivity_give_storage_path_to_rust(
+    mut env: jni::JNIEnv,
+    thiz: jni::objects::JClass,
+    string: jni::objects::JString,
+) {
+    let string = env.get_string(&string).expect("Cant get string from jni");
+    let path = string.to_str().unwrap().to_owned();
+    EXT_JNI_PATH.set(path).unwrap();
+}
+
 pub fn get_storage_location(options_path: &Path) -> Option<StorageLocation> {
     let int = match parse_storage_location(options_path) {
         Ok(location) => location,
@@ -63,7 +77,12 @@ pub fn get_storage_path(location: StorageLocation) -> std::path::PathBuf {
     let result = match location {
         StorageLocation::Internal => format!("/data/user/{userid}/") + pkgtrim,
         StorageLocation::External => {
-            format!("/storage/emulated/{}", userid) + "/Android/data/" + pkgtrim + "/files/"
+            if let Some(path) = EXT_JNI_PATH.get() {
+                log::info!("Jni path is availible, using it");
+                path.to_owned()
+            } else {
+                format!("/storage/emulated/{}", userid) + "/Android/data/" + pkgtrim + "/files/"
+            }
         }
     };
     result.into()
