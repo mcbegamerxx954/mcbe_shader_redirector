@@ -9,7 +9,12 @@ The redirector is still unstable and might have some bugs or crashes, please rep
 
 ## Confirmed working with
 + 1.20.73
-+ 1.20.81 (shaders are broken but it does load successfully)
++ 1.20.81
++ 1.21.0
+
+>[!TIP]
+> This can automatically update renderdragon shaders to work
+> using code ported to rust of [MaterialBinTool](https://github.com/ddf8196/MaterialBinTool) made by [ddf8196](https://github.com/ddf8196)
 
 
 ## How to build(pc):
@@ -24,7 +29,7 @@ The redirector is still unstable and might have some bugs or crashes, please rep
 ## How to build(android)
 + Install termux if you dont have it
 + Update packages using "pkg upg"
-+ Install essential stuff for building using "pkg install build-essential"
++ Install essential stuff for building using "apt install build-essential"
 + Install rust using "pkg install rust"
 + git clone this repo
 + do "cargo build --release" on where the repo is
