@@ -30,7 +30,7 @@ for now it only supports **Android** and also **ChromeOS**.
 
 <br>
 
-> ### Method 2 (Dex)
+> ### Method 2 (Dex, more compatible)
 > + Open/Extract classes.dex in minecraft APK
 > + Search the com.mojang.minecraftpe.MainActivity class 
 > + Inside of it, search the function OnCreate and paste this inside of it:
