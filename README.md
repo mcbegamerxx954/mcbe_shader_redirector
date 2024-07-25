@@ -23,14 +23,14 @@ for now it only supports **Android** and also **ChromeOS**.
 
 3. Make the library start with mc by any of these methods:
 
-> ### Method 1 (Draco Injector) (Recommended)
+> ### Method 1 (Draco Injector) (Easy)
 > **This method automatically creates patched APK with MCBER.**
 > + Download [Draco Injector](https://github.com/mcbegamerxx954/draco-injector/releases/tag/v0.1.7) for your platform and follow [instructions](https://github.com/Sparklight77/DroidDraco).
 > + Or use automated GUI script like [DroidDraco](https://github.com/Sparklight77/DroidDraco) or [MineDraco](https://github.com/CallMeSoumya2063/MineDraco).
 
 <br>
 
-> ### Method 2 (Dex, more compatible)
+> ### Method 2 (Dex, Recommended if you want compatibility)
 > + Open/Extract classes.dex in minecraft APK
 > + Search the com.mojang.minecraftpe.MainActivity class 
 > + Inside of it, search the function OnCreate and paste this inside of it:
