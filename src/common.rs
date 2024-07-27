@@ -24,11 +24,7 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
     let mut data_manager = DataManager::init_data(&path);
     let (sender, reciever) = crossbeam_channel::unbounded();
     let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
-    setup_watches(
-        &mut watcher,
-        &path,
-        &["valid_known_packs.json", "global_resource_packs.json"],
-    );
+    watcher.watch(&path, RecursiveMode::NonRecursive).unwrap();
     for event in reciever {
         let event = match event {
             Ok(event) => event,
@@ -72,13 +68,4 @@ fn update_global_sp(dataman: &mut DataManager, full: bool) {
     };
     *locked_sp = data;
     log::info!("Updated global shader paths: {:#?}", &locked_sp);
-}
-fn setup_watches(watcher: &mut impl Watcher, path: &Path, files: &[&str]) {
-    for file in files {
-        let path = path.join(file);
-        if !path.exists() {
-            File::create(&path).unwrap();
-        }
-        watcher.watch(&path, RecursiveMode::NonRecursive).unwrap();
-    }
 }
