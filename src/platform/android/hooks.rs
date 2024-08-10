@@ -200,8 +200,8 @@ pub(crate) unsafe fn asset_remaining(aasset: *mut AAsset) -> off_t {
 }
 
 pub(crate) unsafe fn asset_remaining64(aasset: *mut AAsset) -> off64_t {
-    let wanted_assets = WANTED_ASSETS.lock().unwrap();
-    let file = match wanted_assets.get(&AAssetPtr(aasset)) {
+    let wanted_assets = WANTED_ASSETS.lock().ok();
+    let file = match wanted_assets.and_then(|hm| hm.get(&AAssetPtr(aasset))) {
         Some(file) => file,
         None => return ndk_sys::AAsset_getRemainingLength64(aasset),
     };

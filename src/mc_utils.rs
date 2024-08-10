@@ -131,12 +131,15 @@ fn scan_pack(
     let mut found_paths = HashMap::new();
     let mut main_path = Path::new(path).join("renderer");
     main_path.push("materials");
+    // Scan main path if it exists
     if main_path.is_dir() {
-        found_paths.extend(scan_path(&main_path)?);
+        found_paths = scan_path(&main_path)?;
         log::info!("Main path had shaders");
     }
+    // Scan subpack path if it exists
     if let Some(subpack) = subpack {
         let mut subpath = Path::new(path).join("subpacks");
+        // Doing it like this prevents allocs + its more crossplatform
         subpath.extend([&subpack, "renderer", "materials"]);
         if subpath.is_dir() {
             found_paths.extend(scan_path(&subpath)?);
@@ -153,10 +156,12 @@ fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
         // Some very important checks are done here
         let metadata = entry.metadata()?;
         // Check if len is larger than usize
+        // This check failing is very bad
         #[cfg(target_os = "android")]
         if metadata.len() >= usize::MAX as u64 {
             continue;
         }
+        // Check if its... well a file
         if !metadata.is_file() {
             continue;
         }
