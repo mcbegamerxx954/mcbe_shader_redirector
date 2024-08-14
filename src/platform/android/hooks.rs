@@ -33,6 +33,7 @@ fn get_latest_mcver(amanager: ndk::asset::AssetManager) -> Option<MinecraftVersi
         MinecraftVersion::V1_18_30,
         MinecraftVersion::V1_19_60,
         MinecraftVersion::V1_20_80,
+        MinecraftVersion::V1_21_20,
     ];
     let android_prefix = "assets/resource_packs/vanilla_";
     let mut apk_version = None;
@@ -84,7 +85,6 @@ pub(crate) unsafe fn asset_open(
     };
     let mut wanted_lock = WANTED_ASSETS.lock().unwrap();
     wanted_lock.insert(AAssetPtr(aasset), file);
-
     aasset
 }
 fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
@@ -94,7 +94,13 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
         get_latest_mcver(manager).unwrap()
     });
     log::warn!("Minecraft version: {mcver}");
-    for version in materialbin::ALL_VERSIONS {
+    for version in [
+        // No 1.18.30 because its too old
+        // and causes issues while updating
+        MinecraftVersion::V1_19_60,
+        MinecraftVersion::V1_20_80,
+        MinecraftVersion::V1_21_20,
+    ] {
         let material: CompiledMaterialDefinition = match data.pread_with(0, version) {
             Ok(data) => data,
             Err(e) => {
@@ -200,8 +206,8 @@ pub(crate) unsafe fn asset_remaining(aasset: *mut AAsset) -> off_t {
 }
 
 pub(crate) unsafe fn asset_remaining64(aasset: *mut AAsset) -> off64_t {
-    let wanted_assets = WANTED_ASSETS.lock().ok();
-    let file = match wanted_assets.and_then(|hm| hm.get(&AAssetPtr(aasset))) {
+    let wanted_assets = WANTED_ASSETS.lock().unwrap();
+    let file = match wanted_assets.get(&AAssetPtr(aasset)) {
         Some(file) => file,
         None => return ndk_sys::AAsset_getRemainingLength64(aasset),
     };
