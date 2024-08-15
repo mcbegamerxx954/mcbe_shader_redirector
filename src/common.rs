@@ -20,6 +20,7 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
     }
 
     let mut data_manager = DataManager::init_data(&path);
+    startup_load(&mut data_manager);
     let (sender, reciever) = crossbeam_channel::unbounded();
     let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
     watcher.watch(&path, RecursiveMode::NonRecursive).unwrap();
@@ -66,4 +67,8 @@ fn update_global_sp(dataman: &mut DataManager, full: bool) {
     };
     *locked_sp = data;
     log::info!("Updated global shader paths: {:#?}", &locked_sp);
+}
+fn startup_load(dataman: &mut DataManager) {
+    log::info!("Trying to load files eagerly");
+    update_global_sp(dataman, true);
 }
