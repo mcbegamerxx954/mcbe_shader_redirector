@@ -1,11 +1,9 @@
 use crate::mc_utils::DataManager;
-use crate::platform::android::{self, get_storage_location, get_storage_path};
+use crate::platform::android::{get_storage_location, get_storage_path};
 use crate::platform::storage::StorageLocation;
 use crate::SHADER_PATHS;
-use notify::event::{AccessKind, AccessMode, EventKind};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
-use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub(crate) fn setup_json_watcher(path: PathBuf) {
     let current_location = match get_storage_location(&path.join("options.txt")) {

@@ -6,7 +6,7 @@ use super::errors::HookError;
 use libc::c_void;
 use plt_rs::{collect_modules, DynamicLibrary, DynamicSymbols};
 use std::ffi::CStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::OnceLock;
 use std::{fs, mem, ptr};
 #[derive(Debug)]
