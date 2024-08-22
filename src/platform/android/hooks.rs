@@ -94,13 +94,7 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
         get_latest_mcver(manager).unwrap()
     });
     log::warn!("Minecraft version: {mcver}");
-    for version in [
-        // No 1.18.30 because its too old
-        // and causes issues while updating
-        MinecraftVersion::V1_19_60,
-        MinecraftVersion::V1_20_80,
-        MinecraftVersion::V1_21_20,
-    ] {
+    for version in materialbin::ALL_VERSIONS {
         let material: CompiledMaterialDefinition = match data.pread_with(0, version) {
             Ok(data) => data,
             Err(e) => {
