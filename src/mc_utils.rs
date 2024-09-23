@@ -2,25 +2,79 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::ffi::OsString;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
+use struson::json_path;
+use struson::reader::{JsonReader, JsonStreamReader, ReaderSettings};
 use thiserror::Error;
 
 // Keeps track and manages data about the minecraft Resource Pack Structure
+#[derive(Debug)]
 pub struct DataManager {
-    valid_packs: Vec<ValidPack>,
-    valid_packs_path: PathBuf,
-    global_packs_path: PathBuf,
+    pub resourcepacks_dir: PathBuf,
+    pub active_packs_path: PathBuf,
 }
 
 // A pack that minecraft verified as valid
-#[derive(Deserialize, Default)]
-#[serde(default)]
+#[derive(Debug)]
 pub struct ValidPack {
-    file_version: Option<u32>,
     uuid: String,
-    path: String,
-    version: String,
+    path: PathBuf,
+    version: Vec<u32>,
+}
+#[derive(Error, Debug)]
+pub enum PackParseError {
+    #[error("Manifest parsing error")]
+    JsonParse(#[from] struson::reader::ReaderError),
+    #[error("Io error while reading")]
+    IoError(#[from] std::io::Error),
+    #[error("Manifest is not valid")]
+    InvalidManifest,
+    #[error("Error while parsing version")]
+    VersionParse(#[from] std::num::ParseIntError),
+}
+impl ValidPack {
+    fn parse_manifest(pack_path: PathBuf) -> Result<Self, PackParseError> {
+        let manifest = File::open(pack_path.join("manifest.json"))?;
+        let mut settings = ReaderSettings::default();
+        settings.allow_comments = true;
+        let mut json = JsonStreamReader::new_custom(manifest, settings);
+        json.seek_to(&json_path!["header"])?;
+        json.begin_object()?;
+        let mut uuid = None;
+        let mut version = None;
+        loop {
+            match json.next_name()? {
+                "uuid" => uuid = Some(json.next_string()?),
+                "version" => {
+                    json.begin_array()?;
+                    let mut numbers: Vec<u32> = Vec::new();
+                    while json.has_next()? {
+                        let workaround = json.next_number()?;
+                        numbers.push(workaround?);
+                    }
+                    json.end_array()?;
+                    version = Some(numbers);
+                }
+                _ => {
+                    json.skip_value()?;
+                }
+            }
+            if !json.has_next()? {
+                break;
+            }
+        }
+        json.end_object()?;
+        if uuid.is_none() || version.is_none() {
+            return Err(PackParseError::InvalidManifest);
+        }
+        Ok(Self {
+            uuid: uuid.unwrap(),
+            path: pack_path,
+            version: version.unwrap(),
+        })
+    }
 }
 
 // A active global pack
@@ -33,47 +87,33 @@ struct GlobalPack {
 
 #[derive(Debug, Error)]
 pub enum DataError {
-    #[error("Expected valid json")]
+    #[error("Expected valid globalpack json")]
     JsonError(#[from] serde_json::Error),
     #[error("Io error while reading json")]
     IoError(#[from] io::Error),
+    #[error("Failed parsing pack manifest")]
+    ManifestParse(#[from] PackParseError),
 }
 
 impl DataManager {
     // Get minecraft paths and create itself
-    pub fn init_data(mcjsons_dir: &Path) -> Self {
-        let valid_packs_path = mcjsons_dir.join("valid_known_packs.json");
-        let global_packs_path = mcjsons_dir.join("global_resource_packs.json");
+    pub fn init_data(json_path: PathBuf, resourcepacks_path: PathBuf) -> Self {
         Self {
-            valid_packs: Vec::new(),
-            valid_packs_path,
-            global_packs_path,
+            resourcepacks_dir: resourcepacks_path,
+            active_packs_path: json_path,
         }
-    }
-
-    // Get valid packs from minecraft
-    pub fn update_validpacks(&mut self) -> Result<(), DataError> {
-        let mut valid_packs: Vec<ValidPack> = vec_from_json(&self.valid_packs_path)?;
-        if let Some(file_version) = valid_packs[0].file_version {
-            assert!(file_version == 2);
-            valid_packs.remove(0);
-        };
-        self.valid_packs = valid_packs;
-        Ok(())
     }
 
     // Get a list of shader paths
     pub fn shader_paths(&self) -> Result<HashMap<OsString, PathBuf>, DataError> {
-        let global_packs: Vec<GlobalPack> = vec_from_json(&self.global_packs_path)?;
+        let global_packs: Vec<GlobalPack> = vec_from_json(&self.active_packs_path)?;
         log::info!("global_packs parsed: {:#?}", global_packs);
+        let packs = self.get_installed_packs()?;
+        log::info!("Installed packs: {packs:#?}");
         let mut final_paths = HashMap::new();
         for pack in global_packs {
-            if let Some(vp) = find_valid_pack(&pack, &self.valid_packs) {
-                let Some(path) = find_pack_folder(&vp.path) else {
-                    log::warn!("Path does not have a pack folder anywhere: {}", &vp.path);
-                    continue;
-                };
-                let mut paths = match scan_pack(&path, pack.subpack) {
+            if let Some(vp) = find_valid_pack(&pack, &packs) {
+                let mut paths = match scan_pack(&vp.path, pack.subpack) {
                     Ok(paths) => paths,
                     Err(e) => {
                         log::error!("Path scanning error: {e}");
@@ -88,31 +128,43 @@ impl DataManager {
 
         Ok(final_paths)
     }
-    // Get shaders in pack directory
+    fn get_installed_packs(&self) -> Result<Vec<ValidPack>, DataError> {
+        let pack_dirs = fs::read_dir(&self.resourcepacks_dir)?;
+        let mut packs = Vec::new();
+        for pack in pack_dirs.flatten() {
+            let manifest_path = match find_pack_folder(&pack.path()) {
+                Some(found) => found,
+                None => {
+                    log::warn!("Cannot find pack manifest for dir: {:?}", pack.path());
+                    continue;
+                }
+            };
+            let validpack = match ValidPack::parse_manifest(manifest_path) {
+                Ok(pack) => pack,
+                Err(err) => {
+                    log::info!("Pack manifest parse failed: {err}");
+                    continue;
+                }
+            };
+            packs.push(validpack);
+        }
+        Ok(packs)
+    }
 }
 fn find_valid_pack<'a>(
     global_pack: &GlobalPack,
-    valid_packs: &'a Vec<ValidPack>,
+    valid_packs: &'a [ValidPack],
 ) -> Option<&'a ValidPack> {
     for valid_pack in valid_packs {
-        if valid_pack.uuid == global_pack.pack_id
-            && valid_pack.version == process_version_array(&global_pack.version)
-        {
+        if valid_pack.uuid == global_pack.pack_id && valid_pack.version == global_pack.version {
             return Some(valid_pack);
         }
     }
     None
 }
-fn process_version_array(version: &Vec<u32>) -> String {
-    let mut version_str = String::new();
-    for int in version {
-        version_str.push_str(&format!("{int}."))
-    }
-    let _ = version_str.pop();
-    version_str
-}
+
 // This is rare, but can happen
-fn find_pack_folder(path: &str) -> Option<PathBuf> {
+fn find_pack_folder(path: &Path) -> Option<PathBuf> {
     let walker = walkdir::WalkDir::new(path);
     for entry in walker.into_iter().flatten() {
         if entry.file_name() == "manifest.json" {

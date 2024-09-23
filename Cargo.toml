@@ -24,6 +24,7 @@ walkdir = { version = "2.5.0", default-features = false }
 materialbin = { version = "0.1.1", git = "https://github.com/mcbegamerxx954/materialbin" }
 scroll = "0.12.0"
 jni = "0.21.1"
+struson = "0.5.0"
 
 
 
