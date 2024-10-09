@@ -156,7 +156,9 @@ fn find_valid_pack<'a>(
     valid_packs: &'a [ValidPack],
 ) -> Option<&'a ValidPack> {
     for valid_pack in valid_packs {
-        if valid_pack.uuid == global_pack.pack_id && valid_pack.version == global_pack.version {
+        if valid_pack.uuid.to_lowercase() == global_pack.pack_id.to_lowercase()
+            && valid_pack.version == global_pack.version
+        {
             return Some(valid_pack);
         }
     }
