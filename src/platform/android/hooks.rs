@@ -103,6 +103,10 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
             }
         };
         log::info!("[{version}]: Parsing had no errors");
+        if version == mcver {
+            log::info!("the shader does not need updating");
+            return None;
+        }
         let mut output = Vec::with_capacity(data.len());
         if let Err(e) = material.write(&mut output, *mcver) {
             log::error!("Writing failed: {e}");
@@ -148,27 +152,15 @@ pub(crate) unsafe fn asset_read(
         Some(file) => file,
         None => return ndk_sys::AAsset_read(aasset, buf, count),
     };
-    let mut rs_buffer: Vec<u8> = vec![0; count];
-    let read_total = match file.read(&mut rs_buffer) {
+    // Avoid a copy and allocation
+    let mut mut_buffer = std::slice::from_raw_parts_mut(buf as *mut u8, count);
+    let read_total = match file.read(&mut mut_buffer) {
         Ok(n) => n,
         Err(e) => {
             log::warn!("fake aasset read failed with: {e}");
             return -1 as libc::c_int;
         }
     };
-    // try to make it as exact as possible
-    rs_buffer.shrink_to_fit();
-    // this is safe because we are gonna forget rs_buffer
-    let data_ptr = rs_buffer.as_mut_ptr();
-    // this should be safe since caller probably
-    // has a array of this size
-    let data_len = rs_buffer.len();
-    // rs_buffer is now adopted
-    std::mem::forget(rs_buffer);
-    // fill c buffer
-    unsafe {
-        std::ptr::copy_nonoverlapping(data_ptr, buf as *mut u8, data_len);
-    }
     read_total as libc::c_int
 }
 
