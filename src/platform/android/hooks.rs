@@ -103,7 +103,7 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
             }
         };
         log::info!("[{version}]: Parsing had no errors");
-        if version == mcver {
+        if version == *mcver {
             log::info!("the shader does not need updating");
             return None;
         }
