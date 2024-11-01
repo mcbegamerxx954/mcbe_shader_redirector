@@ -1,13 +1,15 @@
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::fs::{File, FileType};
+use std::path::{Path, PathBuf, MAIN_SEPARATOR};
 use std::{fs, io};
 use struson::json_path;
 use struson::reader::{JsonReader, JsonStreamReader, ReaderSettings};
 use thiserror::Error;
+use walkdir::DirEntry;
 
 // Keeps track and manages data about the minecraft Resource Pack Structure
 #[derive(Debug)]
@@ -35,6 +37,8 @@ pub enum PackParseError {
     VersionParse(#[from] std::num::ParseIntError),
 }
 impl ValidPack {
+    // We do not use serde because it is much more strict
+    // than bedrock in terms of json parsing
     fn parse_manifest(pack_path: PathBuf) -> Result<Self, PackParseError> {
         let manifest = File::open(pack_path.join("manifest.json"))?;
         let mut settings = ReaderSettings::default();
@@ -72,11 +76,40 @@ impl ValidPack {
         Ok(Self {
             uuid: uuid.unwrap(),
             path: pack_path,
+
             version: version.unwrap(),
         })
     }
+    pub fn get_pack_files(&self, subpack: Option<String>) -> HashMap<PathBuf, PathBuf> {
+        let mut files = get_files(&self.path);
+        if let Some(subpack) = subpack {
+            let subpack_files = get_files(&self.path.join(subpack));
+            files.extend(subpack_files);
+        }
+        files
+    }
 }
 
+fn get_files(path: &Path) -> HashMap<PathBuf, PathBuf> {
+    let walker = walkdir::WalkDir::new(path);
+    let iter = walker.into_iter().filter_entry(is_interesting).flatten();
+    let mut files = HashMap::new();
+    for entry in iter {
+        let curr_path = entry.into_path();
+        let resource_name = curr_path.strip_prefix(path).unwrap();
+        files.insert(resource_name.to_path_buf(), curr_path);
+    }
+    files
+}
+fn is_interesting(entry: &DirEntry) -> bool {
+    if entry.depth() == 1 {
+        return entry.file_name() == "renderer"
+            || entry.file_name() == "vanilla_cameras"
+            || entry.file_name() == "gui"
+            || entry.file_name() == "custom_persona";
+    }
+    true
+}
 // A active global pack
 #[derive(Deserialize, Debug)]
 struct GlobalPack {
@@ -105,27 +138,20 @@ impl DataManager {
     }
 
     // Get a list of shader paths
-    pub fn shader_paths(&self) -> Result<HashMap<OsString, PathBuf>, DataError> {
+    pub fn shader_paths(&self) -> Result<HashMap<PathBuf, PathBuf>, DataError> {
         let global_packs: Vec<GlobalPack> = vec_from_json(&self.active_packs_path)?;
         log::info!("global_packs parsed: {:#?}", global_packs);
         let packs = self.get_installed_packs()?;
         log::info!("Installed packs: {packs:#?}");
         let mut final_paths = HashMap::new();
-        for pack in global_packs {
+        // Explanation: we use .rev to reverse the iterator since this way we can avoid
+        // some checks
+        for pack in global_packs.into_iter().rev() {
             if let Some(vp) = find_valid_pack(&pack, &packs) {
-                let mut paths = match scan_pack(&vp.path, pack.subpack) {
-                    Ok(paths) => paths,
-                    Err(e) => {
-                        log::error!("Path scanning error: {e}");
-                        continue;
-                    }
-                };
-                paths.retain(|k, _| !final_paths.contains_key(k));
-                log::info!("shader paths are: {:#?}", &paths);
+                let paths = vp.get_pack_files(pack.subpack);
                 final_paths.extend(paths);
             }
         }
-
         Ok(final_paths)
     }
     fn get_installed_packs(&self) -> Result<Vec<ValidPack>, DataError> {
@@ -167,9 +193,9 @@ fn find_valid_pack<'a>(
 
 // This is rare, but can happen
 fn find_pack_folder(path: &Path) -> Option<PathBuf> {
-    let walker = walkdir::WalkDir::new(path);
+    let walker = walkdir::WalkDir::new(path).sort_by(|a, b| compare(a, b));
     for entry in walker.into_iter().flatten() {
-        if entry.file_name() == "manifest.json" {
+        if entry.file_name() == "manifest.json" && entry.file_type().is_file() {
             let mut path = entry.into_path();
             let _ = path.pop();
             return Some(path);
@@ -177,58 +203,19 @@ fn find_pack_folder(path: &Path) -> Option<PathBuf> {
     }
     None
 }
-fn scan_pack(
-    path: &Path,
-    subpack: Option<String>,
-) -> Result<HashMap<OsString, PathBuf>, io::Error> {
-    log::trace!("Scanning path: {}", path.display());
-    let mut found_paths = HashMap::new();
-    let mut main_path = Path::new(path).join("renderer");
-    main_path.push("materials");
-    // Scan main path if it exists
-    if main_path.is_dir() {
-        found_paths = scan_path(&main_path)?;
-        log::info!("Main path had shaders");
+fn compare(entry1: &DirEntry, entry2: &DirEntry) -> Ordering {
+    let ftype1 = entry1.file_type();
+    let ftype2 = entry2.file_type();
+    if ftype1.is_file() && !ftype2.is_file() {
+        return Ordering::Less;
     }
-    // Scan subpack path if it exists
-    if let Some(subpack) = subpack {
-        let mut subpath = Path::new(path).join("subpacks");
-        // Doing it like this prevents allocs + its more crossplatform
-        subpath.extend([&subpack, "renderer", "materials"]);
-        if subpath.is_dir() {
-            found_paths.extend(scan_path(&subpath)?);
-        }
+    if !ftype1.is_file() && ftype2.is_file() {
+        return Ordering::Greater;
     }
-    Ok(found_paths)
-}
-fn scan_path(path: &Path) -> Result<HashMap<OsString, PathBuf>, io::Error> {
-    let dir_entries = fs::read_dir(path)?;
-    let mut paths: HashMap<OsString, PathBuf> = HashMap::new();
-    for entry in dir_entries.flatten() {
-        let path = entry.path();
-        let osfile_name = entry.file_name();
-        // Some very important checks are done here
-        let metadata = entry.metadata()?;
-        // Check if len is larger than usize
-        // This check failing is very bad
-        #[cfg(target_os = "android")]
-        if metadata.len() >= usize::MAX as u64 {
-            continue;
-        }
-        // Check if its... well a file
-        if !metadata.is_file() {
-            continue;
-        }
-        // Mojang won't use non utf8 i know it
-        let Some(file_name) = osfile_name.to_str() else {
-            continue;
-        };
-        if !paths.contains_key(&osfile_name) && file_name.ends_with(".material.bin") {
-            log::info!("scan_path found a valid shader path!: {:#?}", &path);
-            paths.insert(osfile_name, path);
-        }
+    if ftype1.is_file() && ftype2.is_file() {
+        return Ordering::Equal;
     }
-    Ok(paths)
+    Ordering::Equal
 }
 pub(crate) fn vec_from_json<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, DataError> {
     let json_file = fs::read_to_string(path)?;

@@ -17,7 +17,6 @@ ndk-sys = "0.6.0"
 serde_json = { version = "1.0.113", features = ["preserve_order"] }
 serde = { version = "1.0.196", features = ["derive"] }
 ctor = "0.2.6"
-plt-rs = "0.2.0"
 thiserror = "1.0.61"
 ndk = { version = "0.9.0", default-features = false }
 walkdir = { version = "2.5.0", default-features = false }
@@ -25,6 +24,9 @@ materialbin = { version = "0.1.1", git = "https://github.com/mcbegamerxx954/mate
 scroll = "0.12.0"
 jni = "0.21.1"
 struson = "0.5.0"
+plt-rs = "0.3.0"
+libloading = "0.8.5"
+page_size = "0.6.0"
 
 
 
