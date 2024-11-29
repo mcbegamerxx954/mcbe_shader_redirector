@@ -105,7 +105,7 @@ fn is_interesting(entry: &DirEntry) -> bool {
     if entry.depth() == 1 {
         return entry.file_name() == "renderer"
             || entry.file_name() == "vanilla_cameras"
-            || entry.file_name() == "gui"
+            || entry.file_name() == "hbui"
             || entry.file_name() == "custom_persona";
     }
     true
@@ -193,7 +193,7 @@ fn find_valid_pack<'a>(
 
 // This is rare, but can happen
 fn find_pack_folder(path: &Path) -> Option<PathBuf> {
-    let walker = walkdir::WalkDir::new(path).sort_by(|a, b| compare(a, b));
+    let walker = walkdir::WalkDir::new(path).sort_by(compare);
     for entry in walker.into_iter().flatten() {
         if entry.file_name() == "manifest.json" && entry.file_type().is_file() {
             let mut path = entry.into_path();
