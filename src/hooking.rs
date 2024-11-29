@@ -80,7 +80,7 @@ pub unsafe fn hook(target: *mut u8, hook_fn: *const u8) {
         0xFF, 0xE0, // jmp eax
     ];
     code[1..5].copy_from_slice(&ptr.to_ne_bytes());
-    (target as *mut [u8; 5]).write(code);
+    (target as *mut [u8; 7]).write(code);
 }
 
 pub unsafe fn setup_hook(orig_fn: *mut u8, hook_fn: *const u8) -> [u8; BACKUP_LEN] {
