@@ -66,21 +66,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-channel"
-version = "0.5.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06ba6d68e24814cb8de6bb986db8222d3a027d15872cabc0d18817bc3c0e4471"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
-name = "crossbeam-utils"
-version = "0.8.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
-
-[[package]]
 name = "ctor"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -258,7 +243,6 @@ name = "mcbe_r"
 version = "0.1.10"
 dependencies = [
  "android_logger",
- "crossbeam-channel",
  "ctor",
  "jni",
  "json-strip-comments",
@@ -266,10 +250,8 @@ dependencies = [
  "libloading",
  "log",
  "materialbin",
- "ndk",
  "ndk-sys",
  "notify",
- "once_cell",
  "page_size",
  "plt-rs",
  "scroll",
@@ -296,20 +278,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ndk"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3f42e7bbe13d351b6bead8286a43aac9534b82bd3cc43e47037f012ebfd62d4"
-dependencies = [
- "bitflags 2.9.0",
- "jni-sys",
- "log",
- "ndk-sys",
- "num_enum",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "ndk-sys"
 version = "0.6.0+11769913"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -325,7 +293,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fee8403b3d66ac7b26aee6e40a897d85dc5ce26f44da36b8b73e987cc52e943"
 dependencies = [
  "bitflags 2.9.0",
- "crossbeam-channel",
  "filetime",
  "fsevent-sys",
  "inotify",
@@ -345,33 +312,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e0826a989adedc2a244799e823aece04662b66609d96af8dff7ac6df9a8925d"
 
 [[package]]
-name = "num_enum"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e613fc340b2220f734a8595782c551f1250e969d87d3be1ae0579e8d4065179"
-dependencies = [
- "num_enum_derive",
-]
-
-[[package]]
-name = "num_enum_derive"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af1844ef2428cc3e1cb900be36181049ef3d3193c63e43026cfe202983b27a56"
-dependencies = [
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "once_cell"
-version = "1.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d75b0bedcc4fe52caa0e03d9f1151a323e4aa5e2d78ba3580400cd3c9e2bc4bc"
-
-[[package]]
 name = "page_size"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -389,15 +329,6 @@ checksum = "db2f496369a4db266956f913e55473c5d392834ea2e345abd604a9ca395e6ce4"
 dependencies = [
  "libc",
  "thiserror 2.0.12",
-]
-
-[[package]]
-name = "proc-macro-crate"
-version = "3.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edce586971a4dfaa28950c6f18ed55e0406c1ab88bbce2c6f6293a7aaba73d35"
-dependencies = [
- "toml_edit",
 ]
 
 [[package]]
@@ -498,23 +429,6 @@ name = "tinyjson"
 version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ab95735ea2c8fd51154d01e39cf13912a78071c2d89abc49a7ef102a7dd725a"
-
-[[package]]
-name = "toml_datetime"
-version = "0.6.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dd7358ecb8fc2f8d014bf86f6f638ce72ba252a2c3a2572f2a795f1d23efb41"
-
-[[package]]
-name = "toml_edit"
-version = "0.22.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17b4795ff5edd201c7cd6dca065ae59972ce77d1b80fa0a84d94950ece7d1474"
-dependencies = [
- "indexmap",
- "toml_datetime",
- "winnow",
-]
 
 [[package]]
 name = "unicode-ident"
@@ -716,12 +630,3 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
-
-[[package]]
-name = "winnow"
-version = "0.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e97b544156e9bebe1a0ffbc03484fc1ffe3100cbce3ffb17eac35f7cdd7ab36"
-dependencies = [
- "memchr",
-]

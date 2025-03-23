@@ -23,7 +23,7 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
         log::info!("global packs json not found, defaulting to internal storage");
     }
     startup_load(&mut data_manager);
-    let (sender, reciever) = crossbeam_channel::unbounded();
+    let (sender, reciever) = std::sync::mpsc::channel();
     let mut watcher = RecommendedWatcher::new(sender, Config::default()).unwrap();
     loop {
         if data_manager.active_packs_path.exists() {

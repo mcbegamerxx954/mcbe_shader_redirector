@@ -1,7 +1,7 @@
 use crate::SHADER_PATHS;
 use libc::{off64_t, off_t};
 use materialbin::{CompiledMaterialDefinition, MinecraftVersion};
-use ndk::asset::Asset;
+//use ndk::asset::Asset;
 use ndk_sys::{AAsset, AAssetManager, AAUDIO_ALLOW_CAPTURE_BY_ALL};
 use scroll::Pread;
 use std::{
@@ -11,6 +11,7 @@ use std::{
     io::{self, Cursor, Read, Seek},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
+    ptr::{slice_from_raw_parts, NonNull},
     sync::{LazyLock, Mutex, OnceLock},
 };
 
@@ -27,7 +28,7 @@ static MC_VERSION: OnceLock<Option<MinecraftVersion>> = OnceLock::new();
 
 // Im very sorry but its just that AssetManager is so shitty to work with
 // i cant handle how randomly it breaks
-fn get_current_mcver(man: ndk::asset::AssetManager) -> Option<MinecraftVersion> {
+fn get_current_mcver(man: *mut AAssetManager) -> Option<MinecraftVersion> {
     let mut file = match get_uitext(man) {
         Some(asset) => asset,
         None => {
@@ -35,10 +36,10 @@ fn get_current_mcver(man: ndk::asset::AssetManager) -> Option<MinecraftVersion> 
             return None;
         }
     };
-    let mut buf = Vec::with_capacity(file.length());
-    file.read_to_end(&mut buf).unwrap();
+    //    let mut buf = Vec::with_capacity(file.length());
+    //  file.read_to_end(&mut buf).unwrap();
     for version in materialbin::ALL_VERSIONS {
-        if buf
+        if file
             .pread_with::<CompiledMaterialDefinition>(0, version)
             .is_ok()
         {
@@ -48,16 +49,33 @@ fn get_current_mcver(man: ndk::asset::AssetManager) -> Option<MinecraftVersion> 
     }
     None
 }
-fn get_uitext(man: ndk::asset::AssetManager) -> Option<Asset> {
+fn get_uitext(man: *mut AAssetManager) -> Option<Vec<u8>> {
     // const just so its all at compile time only
     const NEW: &CStr = c"assets/renderer/materials/UIText.material.bin";
     const OLD: &CStr = c"renderer/materials/UIText.material.bin";
     for path in [NEW, OLD] {
-        if let Some(asset) = man.open(path) {
+        if let Some(asset) = unsafe { get_aasset_data(man, path) } {
             return Some(asset);
         }
     }
     None
+}
+unsafe fn get_aasset_data(man: *mut AAssetManager, cstr: &CStr) -> Option<Vec<u8>> {
+    let aasset = unsafe {
+        ndk_sys::AAssetManager_open(man, cstr.as_ptr(), ndk_sys::AASSET_MODE_STREAMING as i32)
+    };
+    if aasset.is_null() {
+        return None;
+    }
+    let len = unsafe { ndk_sys::AAsset_getLength64(aasset) as usize };
+    let mut vec = Vec::with_capacity(len);
+    let res = unsafe { ndk_sys::AAsset_getBuffer(aasset) };
+    if res.is_null() {
+        return None;
+    }
+    let data = std::slice::from_raw_parts(res as *const u8, len);
+    vec.extend_from_slice(data);
+    Some(vec)
 }
 pub(crate) unsafe fn asset_open(
     man: *mut AAssetManager,
@@ -165,9 +183,10 @@ fn opt_path_join<'a>(
 }
 fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
     let mcver = MC_VERSION.get_or_init(|| {
-        let pointer = std::ptr::NonNull::new(man).unwrap();
-        let manager = unsafe { ndk::asset::AssetManager::from_ptr(pointer) };
-        get_current_mcver(manager)
+        if man.is_null() {
+            panic!("invalid AAssetManager");
+        }
+        get_current_mcver(man)
     });
     // just ignore if no mc version was found
     let mcver = (*mcver)?;
