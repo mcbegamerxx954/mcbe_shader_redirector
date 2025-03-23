@@ -8,25 +8,23 @@ edition = "2021"
 
 [dependencies]
 libc = "0.2.137"
-notify = "6.1.1"
 crossbeam-channel = "0.5.11"
 once_cell = "1.19.0"
-android_logger = {version = "0.13.3", default-features = false}
+android_logger = {version = "0.15.0", default-features = false}
 log = "0.4.20"
 ndk-sys = "0.6.0"
-serde_json = { version = "1.0.113", features = ["preserve_order"] }
-serde = { version = "1.0.196", features = ["derive"] }
-ctor = "0.2.6"
-thiserror = "1.0.61"
 ndk = { version = "0.9.0", default-features = false }
 walkdir = { version = "2.5.0", default-features = false }
 materialbin = { version = "0.1.1", git = "https://github.com/mcbegamerxx954/materialbin" }
 scroll = "0.12.0"
 jni = "0.21.1"
-struson = "0.5.0"
 plt-rs = "0.3.0"
 libloading = "0.8.5"
 page_size = "0.6.0"
+json-strip-comments = "1.0.4"
+tinyjson = "2.5.1"
+notify = { version = "8.0.0", features = ["crossbeam-channel"] }
+ctor = { version = "0.4.1", default-features = false }
 
 
 

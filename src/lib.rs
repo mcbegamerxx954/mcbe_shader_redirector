@@ -14,9 +14,11 @@ static SHADER_PATHS: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> =
 
 // A quick startpoint for the library, mostly there because
 // unwinding up here is ub, + give a good panic message
-#[ctor::ctor]
-fn ctor() {
-    safe_setup();
+ctor::declarative::ctor! {
+  #[ctor]
+  fn ctor() {
+  safe_setup();
+  }
 }
 // Make sure that ub cant happen when unwinding
 // and provide usefull info

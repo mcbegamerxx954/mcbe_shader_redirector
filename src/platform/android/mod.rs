@@ -8,6 +8,8 @@ use libc::c_void;
 use libloading::{Library, Symbol};
 use ndk_sys::ANativeActivity;
 use plt_rs::{collect_modules, DynamicLibrary, DynamicSymbols};
+use std::ffi::{CStr, OsStr};
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::OnceLock;
@@ -129,10 +131,23 @@ pub fn setup_hooks() -> Result<(), HookError> {
             ),
             ("AAsset_getBuffer", hooks::asset_get_buffer as *const _),
             ("AAsset_isAllocated", hooks::asset_is_alloc as *const _),
+            ("fopen", open_hook as *const _),
         ],
     )?;
     log::info!("Finished Hooking");
     Ok(())
+}
+unsafe fn open_hook(filename: *const u8, mode: *const u8) -> *mut libc::FILE {
+    let cfilename = CStr::from_ptr(filename);
+    let Osstr = OsStr::from_bytes(&cfilename.to_bytes());
+    let path = Path::new(Osstr);
+    if path
+        .file_name()
+        .is_some_and(|osstr| osstr.as_encoded_bytes().ends_with(b"options.txt"))
+    {
+        log::info!("mc opened options.txt at {:?}", path);
+    }
+    libc::fopen(filename, mode)
 }
 // Backup of function ptr and its instructions
 #[derive(Debug)]
