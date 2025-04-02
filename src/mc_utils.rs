@@ -61,12 +61,13 @@ impl ValidPack {
         let mut manifest = fs::read_to_string(pack_path.join("manifest.json"))?;
         strip_comments_in_place(&mut manifest, CommentSettings::c_style(), true)?;
         let mut json = tinyjson::JsonParser::new(manifest.chars()).parse()?;
+
         let header = match json.get_value_mut("header") {
             Some(yay) => yay,
             None => return Err(PackParseError::InvalidManifest),
         };
         let uuid = header.get_value_mut("uuid").and_then(|u| u.get_string());
-        let version = json
+        let version = header
             .get_value_mut("version")
             .and_then(|v| v.get_array())
             .and_then(|mut a| a.iter_mut().map(|v| v.get_number()).collect());
@@ -80,25 +81,28 @@ impl ValidPack {
         })
     }
     pub fn get_pack_files(&self, subpack: Option<String>) -> HashMap<PathBuf, PathBuf> {
-        let mut files = get_files(&self.path);
+        let mut list = HashMap::new();
+        get_files(&self.path, &mut list);
         if let Some(subpack) = subpack {
-            let subpack_files = get_files(&self.path.join(subpack));
-            files.extend(subpack_files);
+            let mut path = self.path.to_path_buf();
+            path.extend(["subpacks", &subpack]);
+            get_files(&path, &mut list);
+            //            files.extend(subpack_files);
         }
-        files
+        list
     }
 }
 
-fn get_files(path: &Path) -> HashMap<PathBuf, PathBuf> {
+fn get_files(path: &Path, file_list: &mut HashMap<PathBuf, PathBuf>) {
     let walker = walkdir::WalkDir::new(path);
     let iter = walker.into_iter().filter_entry(is_interesting).flatten();
-    let mut files = HashMap::new();
+    //    let mut files = HashMap::new();
     for entry in iter {
         let curr_path = entry.into_path();
         let resource_name = curr_path.strip_prefix(path).unwrap();
-        files.insert(resource_name.to_path_buf(), curr_path);
+        file_list.insert(resource_name.to_path_buf(), curr_path);
     }
-    files
+    //    files
 }
 fn is_interesting(entry: &DirEntry) -> bool {
     if entry.depth() == 1 {
@@ -226,7 +230,7 @@ fn find_valid_pack<'a>(
     valid_packs: &'a [ValidPack],
 ) -> Option<&'a ValidPack> {
     for valid_pack in valid_packs {
-        if valid_pack.uuid.to_lowercase() == global_pack.pack_id.to_lowercase()
+        if valid_pack.uuid.eq_ignore_ascii_case(&global_pack.pack_id)
             && valid_pack.version == global_pack.version
         {
             return Some(valid_pack);
