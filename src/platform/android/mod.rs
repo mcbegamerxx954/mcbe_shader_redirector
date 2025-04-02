@@ -135,18 +135,18 @@ pub fn setup_hooks() -> Result<(), HookError> {
     log::info!("Finished Hooking");
     Ok(())
 }
-unsafe fn open_hook(filename: *const u8, mode: *const u8) -> *mut libc::FILE {
-    let cfilename = CStr::from_ptr(filename);
-    let Osstr = OsStr::from_bytes(&cfilename.to_bytes());
-    let path = Path::new(Osstr);
-    if path
-        .file_name()
-        .is_some_and(|osstr| osstr.as_encoded_bytes().ends_with(b"options.txt"))
-    {
-        log::info!("mc opened options.txt at {:?}", path);
-    }
-    libc::fopen(filename, mode)
-}
+// unsafe fn open_hook(filename: *const u8, mode: *const u8) -> *mut libc::FILE {
+//     let cfilename = CStr::from_ptr(filename);
+//     let Osstr = OsStr::from_bytes(&cfilename.to_bytes());
+//     let path = Path::new(Osstr);
+//     if path
+//         .file_name()
+//         .is_some_and(|osstr| osstr.as_encoded_bytes().ends_with(b"options.txt"))
+//     {
+//         log::info!("mc opened options.txt at {:?}", path);
+//     }
+//     libc::fopen(filename, mode)
+// }
 // Backup of function ptr and its instructions
 #[derive(Debug)]
 struct MemBackup {
