@@ -3,12 +3,11 @@ mod hooking;
 mod mc_utils;
 mod platform;
 //use once_cell::sync::Lazy;
-use std::cell::LazyCell;
 use std::collections::HashMap;
 
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
-use std::{fs, thread};
+use std::fs;
 
 static SHADER_PATHS: LazyLock<Mutex<HashMap<PathBuf, PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));

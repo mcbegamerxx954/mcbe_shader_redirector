@@ -6,12 +6,10 @@ use self::storage::{parse_storage_location, StorageLocation};
 use super::errors::HookError;
 use libc::c_void;
 use libloading::{Library, Symbol};
-use ndk_sys::ANativeActivity;
-use plt_rs::{collect_modules, DynamicLibrary, DynamicSymbols};
+use plt_rs::{collect_modules, DynamicLibrary};
 use std::ffi::{CStr, OsStr};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::ptr::NonNull;
 use std::sync::OnceLock;
 use std::time::Duration;
 

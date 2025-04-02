@@ -2,16 +2,15 @@ use crate::SHADER_PATHS;
 use libc::{off64_t, off_t};
 use materialbin::{CompiledMaterialDefinition, MinecraftVersion};
 //use ndk::asset::Asset;
-use ndk_sys::{AAsset, AAssetManager, AAUDIO_ALLOW_CAPTURE_BY_ALL};
+use ndk_sys::{AAsset, AAssetManager};
 use scroll::Pread;
 use std::{
     collections::HashMap,
-    ffi::{CStr, CString, OsStr},
+    ffi::{CStr, OsStr},
     fs::File,
     io::{self, Cursor, Read, Seek},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    ptr::{slice_from_raw_parts, NonNull},
     sync::{LazyLock, Mutex, OnceLock},
 };
 
@@ -29,7 +28,7 @@ static MC_VERSION: OnceLock<Option<MinecraftVersion>> = OnceLock::new();
 // Im very sorry but its just that AssetManager is so shitty to work with
 // i cant handle how randomly it breaks
 fn get_current_mcver(man: *mut AAssetManager) -> Option<MinecraftVersion> {
-    let mut file = match get_uitext(man) {
+    let file = match get_uitext(man) {
         Some(asset) => asset,
         None => {
             log::error!("Shader fixing is disabled as no mc version was found");

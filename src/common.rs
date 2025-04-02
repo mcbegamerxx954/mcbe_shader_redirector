@@ -3,7 +3,6 @@ use crate::platform::android::{get_storage_location, get_storage_path};
 use crate::platform::storage::StorageLocation;
 use crate::SHADER_PATHS;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 

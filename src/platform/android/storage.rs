@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader, WriterPanicked},
+    io::{BufRead, BufReader},
     path::Path,
 };
 macro_rules! from_error {
