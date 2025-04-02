@@ -129,7 +129,7 @@ pub fn setup_hooks() -> Result<(), HookError> {
             ),
             ("AAsset_getBuffer", hooks::asset_get_buffer as *const _),
             ("AAsset_isAllocated", hooks::asset_is_alloc as *const _),
-            ("fopen", open_hook as *const _),
+            // ("fopen", open_hook as *const _),
         ],
     )?;
     log::info!("Finished Hooking");
