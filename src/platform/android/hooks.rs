@@ -1,7 +1,13 @@
+use crate::platform::OPTS;
 use crate::SHADER_PATHS;
 use libc::{off64_t, off_t};
-use materialbin::{CompiledMaterialDefinition, MinecraftVersion};
+use materialbin::{
+    bgfx_shader::BgfxShader, pass::ShaderStage, CompiledMaterialDefinition, MinecraftVersion,
+};
+use memchr::memmem::Finder;
+use std::{ptr::NonNull, sync::atomic::Ordering};
 //use ndk::asset::Asset;
+use ndk::asset::{Asset, AssetManager};
 use ndk_sys::{AAsset, AAssetManager};
 use scroll::Pread;
 use std::{
@@ -11,9 +17,8 @@ use std::{
     io::{self, Cursor, Read, Seek},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    sync::{LazyLock, Mutex, OnceLock},
+    sync::{atomic::AtomicBool, LazyLock, Mutex, OnceLock},
 };
-
 // This makes me feel wrong... but all we will do is compare the pointer
 // and the struct will be used in a mutex so i guess this is safe??
 #[derive(PartialEq, Eq, Hash)]
@@ -24,57 +29,45 @@ unsafe impl Send for AAssetPtr {}
 static WANTED_ASSETS: LazyLock<Mutex<HashMap<AAssetPtr, CowFile>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static MC_VERSION: OnceLock<Option<MinecraftVersion>> = OnceLock::new();
-
-// Im very sorry but its just that AssetManager is so shitty to work with
-// i cant handle how randomly it breaks
-fn get_current_mcver(man: *mut AAssetManager) -> Option<MinecraftVersion> {
-    let file = match get_uitext(man) {
+static IS_1_21_100: AtomicBool = AtomicBool::new(false);
+fn get_current_mcver(man: ndk::asset::AssetManager) -> Option<MinecraftVersion> {
+    let mut file = match get_uitext(man) {
         Some(asset) => asset,
         None => {
-            log::error!("Shader fixing is disabled as no mc version was found");
+            log::error!("Shader fixing is disabled as RenderChunk was not found");
             return None;
         }
     };
-    //    let mut buf = Vec::with_capacity(file.length());
-    //  file.read_to_end(&mut buf).unwrap();
-    for version in materialbin::ALL_VERSIONS {
-        if file
-            .pread_with::<CompiledMaterialDefinition>(0, version)
-            .is_ok()
-        {
+    let mut buf = Vec::with_capacity(file.length());
+    if let Err(e) = file.read_to_end(&mut buf) {
+        log::error!("Something is wrong with AssetManager, mc detection failed: {e}");
+        return None;
+    };
+
+    for version in materialbin::ALL_VERSIONS.into_iter().rev() {
+        if let Ok(_shader) = buf.pread_with::<CompiledMaterialDefinition>(0, version) {
             log::info!("Mc version is {version}");
+            if memchr::memmem::find(&buf, b"v_dithering").is_some() {
+                log::warn!("mc is 1.21.100 and higher");
+                IS_1_21_100.store(true, Ordering::Release);
+            }
             return Some(version);
         };
     }
+    log::warn!("Cannot detect mc version, autofix disabled");
     None
 }
-fn get_uitext(man: *mut AAssetManager) -> Option<Vec<u8>> {
-    // const just so its all at compile time only
-    const NEW: &CStr = c"assets/renderer/materials/UIText.material.bin";
-    const OLD: &CStr = c"renderer/materials/UIText.material.bin";
+
+// Try to open UIText.material.bin to guess Minecraft shader version
+fn get_uitext(man: ndk::asset::AssetManager) -> Option<Asset> {
+    const NEW: &CStr = c"assets/renderer/materials/RenderChunk.material.bin";
+    const OLD: &CStr = c"renderer/materials/RenderChunk.material.bin";
     for path in [NEW, OLD] {
-        if let Some(asset) = unsafe { get_aasset_data(man, path) } {
+        if let Some(asset) = man.open(path) {
             return Some(asset);
         }
     }
     None
-}
-unsafe fn get_aasset_data(man: *mut AAssetManager, cstr: &CStr) -> Option<Vec<u8>> {
-    let aasset = unsafe {
-        ndk_sys::AAssetManager_open(man, cstr.as_ptr(), ndk_sys::AASSET_MODE_STREAMING as i32)
-    };
-    if aasset.is_null() {
-        return None;
-    }
-    let len = unsafe { ndk_sys::AAsset_getLength64(aasset) as usize };
-    let mut vec = Vec::with_capacity(len);
-    let res = unsafe { ndk_sys::AAsset_getBuffer(aasset) };
-    if res.is_null() {
-        return None;
-    }
-    let data = std::slice::from_raw_parts(res as *const u8, len);
-    vec.extend_from_slice(data);
-    Some(vec)
 }
 pub(crate) unsafe fn asset_open(
     man: *mut AAssetManager,
@@ -91,10 +84,7 @@ pub(crate) unsafe fn asset_open(
         log::warn!("Path had no filename: {c_path:?}");
         return aasset;
     };
-    let stripped_path = match c_path.strip_prefix("assets/") {
-        Ok(stripped) => stripped,
-        Err(_) => c_path,
-    };
+    let stripped_path = c_path.strip_prefix("assets/").unwrap_or(c_path);
     let replacement_list = [
         ("gui/dist/hbui/", "hbui/"),
         ("renderer/", "renderer/"),
@@ -104,7 +94,6 @@ pub(crate) unsafe fn asset_open(
     for replacement in replacement_list {
         if let Ok(path) = stripped_path.strip_prefix(replacement.0) {
             let shader_paths = SHADER_PATHS.lock().unwrap();
-
             // this will be used if the joined path fits
             let mut bytes = [0; 128];
             // this will be used if the joined path does not fit in bytes var
@@ -182,24 +171,41 @@ fn opt_path_join<'a>(
 }
 fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
     let mcver = MC_VERSION.get_or_init(|| {
-        if man.is_null() {
-            panic!("invalid AAssetManager");
-        }
-        get_current_mcver(man)
+        let ptr = NonNull::new(man).unwrap();
+        let manager = unsafe { AssetManager::from_ptr(ptr) };
+        get_current_mcver(manager)
     });
-    // just ignore if no mc version was found
+    // Just ignore if no Minecraft version was found
     let mcver = (*mcver)?;
-    for version in materialbin::ALL_VERSIONS {
-        let material: CompiledMaterialDefinition = match data.pread_with(0, version) {
+    let opts = OPTS.lock().unwrap();
+    for version in opts.autofixer_versions.iter() {
+        let version = *version;
+        let mut material: CompiledMaterialDefinition = match data.pread_with(0, version) {
             Ok(data) => data,
             Err(e) => {
                 log::trace!("[version] Parsing failed: {e}");
                 continue;
             }
         };
+        let needs_lightmap_fix = IS_1_21_100.load(Ordering::Acquire)
+            && version != MinecraftVersion::V1_21_110
+            && (material.name == "RenderChunk" || material.name == "RenderChunkPrepass")
+            && opts.handle_lightmaps;
+        let needs_sampler_fix = material.name == "RenderChunk"
+            && mcver >= MinecraftVersion::V1_20_80
+            && version <= MinecraftVersion::V1_19_60
+            && opts.handle_texturelods;
         // Prevent some work
-        if version == mcver {
+        if version == mcver && !needs_lightmap_fix && !needs_sampler_fix {
+            log::info!("Did not fix mtbin, mtversion: {version}");
             return None;
+        }
+        if needs_lightmap_fix {
+            handle_lightmaps(&mut material);
+            log::warn!("Had to fix lightmaps for RenderChunk");
+        }
+        if needs_sampler_fix {
+            handle_samplers(&mut material);
         }
         let mut output = Vec::with_capacity(data.len());
         if let Err(e) = material.write(&mut output, mcver) {
@@ -208,8 +214,68 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
         }
         return Some(output);
     }
+
     None
 }
+fn handle_lightmaps(materialbin: &mut CompiledMaterialDefinition) {
+    let finder = Finder::new(b"void main");
+    let replace_with = b"
+#define a_texcoord1 vec2(fract(a_texcoord1.x*15.9375)+0.0001,floor(a_texcoord1.x*15.9375)*0.0625+0.0001)
+void main";
+    for (_, pass) in &mut materialbin.passes {
+        for variants in &mut pass.variants {
+            for (stage, code) in &mut variants.shader_codes {
+                if stage.stage == ShaderStage::Vertex {
+                    let blob = &mut code.bgfx_shader_data;
+                    let Ok(mut bgfx) = blob.pread::<BgfxShader>(0) else {
+                        continue;
+                    };
+                    replace_bytes(&mut bgfx.code, &finder, b"void main", replace_with);
+                    blob.clear();
+                    let _unused = bgfx.write(blob);
+                }
+            }
+        }
+    }
+}
+fn handle_samplers(materialbin: &mut CompiledMaterialDefinition) {
+    let pattern = b"void main ()";
+    let replace_with = b"
+#if __VERSION__ >= 300
+ #define texture(tex,uv) textureLod(tex,uv,0.0)
+#else
+ #define texture2D(tex,uv) texture2DLod(tex,uv,0.0)
+#endif
+void main ()";
+    let finder = Finder::new(pattern);
+    for (_passes, pass) in &mut materialbin.passes {
+        if _passes == "AlphaTest" || _passes == "Opaque" {
+            for variants in &mut pass.variants {
+                for (stage, code) in &mut variants.shader_codes {
+                    if stage.stage == ShaderStage::Fragment && stage.platform_name == "ESSL_100" {
+                        log::info!("handle_samplers");
+                        let mut bgfx: BgfxShader = code.bgfx_shader_data.pread(0).unwrap();
+                        replace_bytes(&mut bgfx.code, &finder, pattern, replace_with);
+                        code.bgfx_shader_data.clear();
+                        bgfx.write(&mut code.bgfx_shader_data).unwrap();
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn replace_bytes(codebuf: &mut Vec<u8>, finder: &Finder, pattern: &[u8], replace_with: &[u8]) {
+    let sus = match finder.find(codebuf) {
+        Some(yay) => yay,
+        None => {
+            println!("oops");
+            return;
+        }
+    };
+    codebuf.splice(sus..sus + pattern.len(), replace_with.iter().cloned());
+}
+
 pub(crate) unsafe fn asset_seek64(
     aasset: *mut AAsset,
     off: off64_t,
@@ -295,9 +361,8 @@ pub(crate) unsafe fn asset_remaining64(aasset: *mut AAsset) -> off64_t {
 
 pub(crate) unsafe fn asset_close(aasset: *mut AAsset) {
     let mut wanted_assets = WANTED_ASSETS.lock().unwrap();
-    if wanted_assets.remove(&AAssetPtr(aasset)).is_none() {
-        ndk_sys::AAsset_close(aasset);
-    }
+    let _result = wanted_assets.remove(&AAssetPtr(aasset));
+    ndk_sys::AAsset_close(aasset);
 }
 
 pub(crate) unsafe fn asset_get_buffer(aasset: *mut AAsset) -> *const libc::c_void {
@@ -426,7 +491,7 @@ impl CowFile {
         };
 
         let ptr = vec.as_mut_ptr();
-        std::mem::forget(vec);
+        //        std::mem::forget(vec);
         Ok(ptr)
     }
 }

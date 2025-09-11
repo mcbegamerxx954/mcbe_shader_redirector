@@ -5,9 +5,9 @@ mod platform;
 //use once_cell::sync::Lazy;
 use std::collections::HashMap;
 
+use std::fs;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
-use std::fs;
 
 static SHADER_PATHS: LazyLock<Mutex<HashMap<PathBuf, PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));

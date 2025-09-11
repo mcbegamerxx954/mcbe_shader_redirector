@@ -1,14 +1,13 @@
 mod hooks;
 pub mod storage;
-use crate::hooking::{setup_hook, unsetup_hook};
+//use crate::hooking::{setup_hook, unsetup_hook};
 
 use self::storage::{parse_storage_location, StorageLocation};
 use super::errors::HookError;
 use libc::c_void;
 use libloading::{Library, Symbol};
 use plt_rs::{collect_modules, DynamicLibrary};
-use std::ffi::{CStr, OsStr};
-use std::os::unix::ffi::OsStrExt;
+
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -18,10 +17,14 @@ struct JniPaths {
     internal_path: String,
     external_path: String,
 }
+
 type IsEduFn = unsafe extern "C" fn(jni::JNIEnv, jni::objects::JObject);
 static JNI_PATHS: OnceLock<JniPaths> = OnceLock::new();
-pub static EDU_BACKUP: OnceLock<MemBackup> = OnceLock::new();
-extern "C" fn is_edu_hook(mut env: jni::JNIEnv, thiz: jni::objects::JObject) {
+
+bhook::hook_fn! {
+fn edu_hook(env: jni::JNIEnv, thiz: jni::objects::JObject) -> () = {
+    use crate::platform::android::{get_string_from_fn, JNI_PATHS, JniPaths};
+    let mut env = env;
     let external_path = get_string_from_fn(&mut env, &thiz, "getExternalStoragePath");
     let internal_path = get_string_from_fn(&mut env, &thiz, "getInternalStoragePath");
     let paths = JniPaths {
@@ -29,11 +32,8 @@ extern "C" fn is_edu_hook(mut env: jni::JNIEnv, thiz: jni::objects::JObject) {
         external_path,
     };
     JNI_PATHS.set(paths).unwrap();
-    let edu = EDU_BACKUP.get().unwrap();
-    unsafe {
-        unsetup_hook(edu.original_func_ptr as _, edu.backup_bytes);
-        (edu.original_func_ptr)(env, thiz);
-    }
+    self_disable()
+}
 }
 fn get_string_from_fn(
     env: &mut jni::JNIEnv,
@@ -135,39 +135,13 @@ pub fn setup_hooks() -> Result<(), HookError> {
     log::info!("Finished Hooking");
     Ok(())
 }
-// unsafe fn open_hook(filename: *const u8, mode: *const u8) -> *mut libc::FILE {
-//     let cfilename = CStr::from_ptr(filename);
-//     let Osstr = OsStr::from_bytes(&cfilename.to_bytes());
-//     let path = Path::new(Osstr);
-//     if path
-//         .file_name()
-//         .is_some_and(|osstr| osstr.as_encoded_bytes().ends_with(b"options.txt"))
-//     {
-//         log::info!("mc opened options.txt at {:?}", path);
-//     }
-//     libc::fopen(filename, mode)
-// }
-// Backup of function ptr and its instructions
-#[derive(Debug)]
-struct MemBackup {
-    backup_bytes: [u8; crate::hooking::BACKUP_LEN],
-    original_func_ptr: IsEduFn,
-}
-
-unsafe impl Send for MemBackup {}
-unsafe impl Sync for MemBackup {}
 
 unsafe fn special_hook(libname: &str) {
     const IS_EDU: &[u8] = b"Java_com_mojang_minecraftpe_MainActivity_isEduMode\0";
     let lib = Library::new(libname).unwrap();
     let sym: Symbol<IsEduFn> = lib.get(IS_EDU).unwrap();
     let addr = *sym;
-    let result = setup_hook(addr as _, is_edu_hook as _);
-    let mbackup = MemBackup {
-        backup_bytes: result,
-        original_func_ptr: addr,
-    };
-    EDU_BACKUP.set(mbackup);
+    edu_hook::hook_address(addr as _);
 }
 fn find_lib<'a>(target_name: &str) -> Option<plt_rs::LoadedLibrary<'a>> {
     let loaded_modules = collect_modules();
@@ -208,11 +182,7 @@ fn replace_plt_function(
                 "Mprotect error on setting rw".to_string(),
             ));
         }
-
-        // Replace the function address
         plt_fn_ptr.write(replacement as *mut _);
-
-        // Set the memory page protection back to read only
         let prot_res = libc::mprotect(plt_page, page_size, libc::PROT_READ);
         if prot_res != 0 {
             return Err(HookError::OsError(
@@ -221,4 +191,70 @@ fn replace_plt_function(
         }
         Ok(())
     }
+}
+use std::sync::{LazyLock, Mutex};
+
+use jni::{
+    objects::{AsJArrayRaw, JObject, JObjectArray, JPrimitiveArray, JString},
+    sys::{jboolean, JNI_TRUE},
+    JNIEnv,
+};
+use materialbin::{MinecraftVersion, ALL_VERSIONS};
+pub struct Options {
+    pub handle_lightmaps: bool,
+    pub handle_texturelods: bool,
+    pub autofixer_versions: Vec<MinecraftVersion>,
+}
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            handle_lightmaps: true,
+            handle_texturelods: true,
+            autofixer_versions: ALL_VERSIONS.to_vec(),
+        }
+    }
+}
+pub static OPTS: LazyLock<Mutex<Options>> = LazyLock::new(|| Mutex::new(Options::default()));
+#[no_mangle]
+extern "C" fn Java_io_bambosan_mbloader_launcherUtils_LibBindings_setAutofixVersions(
+    mut env: JNIEnv,
+    _thiz: JObject,
+    versions: JObjectArray,
+) {
+    let sus = env.get_array_length(&versions).unwrap();
+    let mut rs_versions = Vec::new();
+    for index in 0..sus {
+        let string = env.get_object_array_element(&versions, index).unwrap();
+        let string: JString = string.into();
+        let sus = env.get_string(&string).unwrap();
+        rs_versions.push(version_from_string(sus.to_str().unwrap()).unwrap());
+    }
+    OPTS.lock().unwrap().autofixer_versions = rs_versions;
+}
+fn version_from_string(string: &str) -> Option<MinecraftVersion> {
+    let mcversion = match string {
+        "v1.18.30" => MinecraftVersion::V1_18_30,
+        "v1.19.60" => MinecraftVersion::V1_19_60,
+        "v1.20.80" => MinecraftVersion::V1_20_80,
+        "v1.21.20" => MinecraftVersion::V1_21_20,
+        "v1.21.110+" => MinecraftVersion::V1_21_110,
+        _ => return None,
+    };
+    Some(mcversion)
+}
+#[no_mangle]
+extern "C" fn Java_io_bambosan_mbloader_launcherUtils_LibBindings_setLightmapAutofixer(
+    mut _env: JNIEnv,
+    _thiz: JObject,
+    on: jboolean,
+) {
+    OPTS.lock().unwrap().handle_lightmaps = on == JNI_TRUE;
+}
+#[no_mangle]
+extern "C" fn Java_io_bambosan_mbloader_launcherUtils_LibBindings_setTextureLodAutofixer(
+    mut _env: JNIEnv,
+    _thiz: JObject,
+    on: jboolean,
+) {
+    OPTS.lock().unwrap().handle_texturelods = on == JNI_TRUE;
 }
