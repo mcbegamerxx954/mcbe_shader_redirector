@@ -1,19 +1,24 @@
+use crate::platform::OPTS;
 use crate::SHADER_PATHS;
 use libc::{off64_t, off_t};
-use materialbin::{CompiledMaterialDefinition, MinecraftVersion};
+use materialbin::{
+    bgfx_shader::BgfxShader, pass::ShaderStage, CompiledMaterialDefinition, MinecraftVersion,
+};
+use memchr::memmem::Finder;
+use std::{ptr::NonNull, sync::atomic::Ordering};
+//use ndk::asset::Asset;
+use ndk::asset::{Asset, AssetManager};
 use ndk_sys::{AAsset, AAssetManager};
-
-use once_cell::sync::Lazy;
 use scroll::Pread;
 use std::{
     collections::HashMap,
-    ffi::{CStr, CString, OsStr},
+    ffi::{CStr, OsStr},
+    fs::File,
     io::{self, Cursor, Read, Seek},
     os::unix::ffi::OsStrExt,
-    path::Path,
-    sync::{Mutex, OnceLock},
+    path::{Path, PathBuf},
+    sync::{atomic::AtomicBool, LazyLock, Mutex, OnceLock},
 };
-
 // This makes me feel wrong... but all we will do is compare the pointer
 // and the struct will be used in a mutex so i guess this is safe??
 #[derive(PartialEq, Eq, Hash)]
@@ -21,31 +26,48 @@ struct AAssetPtr(*const ndk_sys::AAsset);
 unsafe impl Send for AAssetPtr {}
 
 // the assets we want to intercept access to
-static WANTED_ASSETS: Lazy<Mutex<HashMap<AAssetPtr, Cursor<Vec<u8>>>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-static MC_VERSION: OnceLock<MinecraftVersion> = OnceLock::new();
+static WANTED_ASSETS: LazyLock<Mutex<HashMap<AAssetPtr, CowFile>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static MC_VERSION: OnceLock<Option<MinecraftVersion>> = OnceLock::new();
+static IS_1_21_100: AtomicBool = AtomicBool::new(false);
+fn get_current_mcver(man: ndk::asset::AssetManager) -> Option<MinecraftVersion> {
+    let mut file = match get_uitext(man) {
+        Some(asset) => asset,
+        None => {
+            log::error!("Shader fixing is disabled as RenderChunk was not found");
+            return None;
+        }
+    };
+    let mut buf = Vec::with_capacity(file.length());
+    if let Err(e) = file.read_to_end(&mut buf) {
+        log::error!("Something is wrong with AssetManager, mc detection failed: {e}");
+        return None;
+    };
 
-// This is unsafe because it calls stuff that can give us some nasty UB
-// But we let ub happen because honestly this is a hook
-fn get_latest_mcver(amanager: ndk::asset::AssetManager) -> Option<MinecraftVersion> {
-    // This is kinda complicated but its simple
-    let versions = [
-        MinecraftVersion::V1_18_30,
-        MinecraftVersion::V1_19_60,
-        MinecraftVersion::V1_20_80,
-        MinecraftVersion::V1_21_20,
-    ];
-    let android_prefix = "assets/resource_packs/vanilla_";
-    let mut apk_version = None;
-    // Since this does not stop after finding one, it will replace it with the
-    // latest one if it exists
-    for version in versions {
-        let path = format!("{android_prefix}{version}/");
-        if amanager.open_dir(&CString::new(path).unwrap()).is_some() {
-            apk_version = Some(version);
+    for version in materialbin::ALL_VERSIONS.into_iter().rev() {
+        if let Ok(_shader) = buf.pread_with::<CompiledMaterialDefinition>(0, version) {
+            log::info!("Mc version is {version}");
+            if memchr::memmem::find(&buf, b"v_dithering").is_some() {
+                log::warn!("mc is 1.21.100 and higher");
+                IS_1_21_100.store(true, Ordering::Release);
+            }
+            return Some(version);
+        };
+    }
+    log::warn!("Cannot detect mc version, autofix disabled");
+    None
+}
+
+// Try to open UIText.material.bin to guess Minecraft shader version
+fn get_uitext(man: ndk::asset::AssetManager) -> Option<Asset> {
+    const NEW: &CStr = c"assets/renderer/materials/RenderChunk.material.bin";
+    const OLD: &CStr = c"renderer/materials/RenderChunk.material.bin";
+    for path in [NEW, OLD] {
+        if let Some(asset) = man.open(path) {
+            return Some(asset);
         }
     }
-    apk_version
+    None
 }
 pub(crate) unsafe fn asset_open(
     man: *mut AAssetManager,
@@ -56,67 +78,204 @@ pub(crate) unsafe fn asset_open(
     let aasset = unsafe { ndk_sys::AAssetManager_open(man, fname, mode) };
     let c_str = unsafe { CStr::from_ptr(fname) };
     let raw_cstr = c_str.to_bytes();
-    if !raw_cstr.ends_with(b".material.bin") {
-        return aasset;
-    }
     let os_str = OsStr::from_bytes(raw_cstr);
     let c_path: &Path = Path::new(os_str);
     let Some(os_filename) = c_path.file_name() else {
-        log::warn!("Cant get filename from cpath: {:#?}", c_path);
+        log::warn!("Path had no filename: {c_path:?}");
         return aasset;
     };
-    let Ok(lock) = SHADER_PATHS.lock() else {
-        log::warn!("Lock is poisoned... ignoring");
-        return aasset;
-    };
-    let Some(path) = lock.get(os_filename) else {
-        log::warn!("Cant find filename in list: {:#?}", os_filename);
-        return aasset;
-    };
-    let file = match std::fs::read(path) {
-        Ok(file) => Cursor::new(match process_material(man, &file) {
-            Some(updated) => updated,
-            None => file,
-        }),
-        Err(e) => {
-            log::warn!("Cant open path {path:#?}: {e}");
+    let stripped_path = c_path.strip_prefix("assets/").unwrap_or(c_path);
+    let replacement_list = [
+        ("gui/dist/hbui/", "hbui/"),
+        ("renderer/", "renderer/"),
+        ("resource_packs/vanilla/cameras", "vanilla_cameras/"),
+        ("skin_packs/persona", "custom_persona/"),
+    ];
+    for replacement in replacement_list {
+        if let Ok(path) = stripped_path.strip_prefix(replacement.0) {
+            let shader_paths = SHADER_PATHS.lock().unwrap();
+            // this will be used if the joined path fits
+            let mut bytes = [0; 128];
+            // this will be used if the joined path does not fit in bytes var
+            let mut planb = PathBuf::new();
+            // Try to avoid allocation
+            let path = opt_path_join(
+                &mut bytes,
+                Some(&mut planb),
+                &[Path::new(replacement.1), path],
+            );
+            // Try to get the file
+            let filepath = match shader_paths.get(path) {
+                Some(path) => path,
+                None => {
+                    log::info!("Cannot load file: {:?}", path);
+                    return aasset;
+                }
+            };
+            let buffer = if os_filename.as_encoded_bytes().ends_with(b".material.bin") {
+                let file = match std::fs::read(filepath) {
+                    Ok(file) => file,
+                    Err(err) => {
+                        log::info!("Cannot open shader file: {err}");
+                        return aasset;
+                    }
+                };
+                let result = match process_material(man, &file) {
+                    Some(updated) => updated,
+                    None => file,
+                };
+                CowFile::Buffer(Cursor::new(result))
+            } else {
+                let file = match File::open(filepath) {
+                    Ok(file) => file,
+                    Err(err) => {
+                        log::warn!("Cannot open file: {err}");
+                        return aasset;
+                    }
+                };
+                CowFile::File(file)
+            };
+            let mut wanted_lock = WANTED_ASSETS.lock().unwrap();
+            wanted_lock.insert(AAssetPtr(aasset), buffer);
             return aasset;
         }
-    };
-    let mut wanted_lock = WANTED_ASSETS.lock().unwrap();
-    wanted_lock.insert(AAssetPtr(aasset), file);
-    aasset
+    }
+    return aasset;
+}
+/// Join paths without allocating if possible, or
+/// if the joined path does not fit the buffer then just
+/// allocate instead
+fn opt_path_join<'a>(
+    bytes: &'a mut [u8; 128],
+    pathbuf: Option<&'a mut PathBuf>,
+    paths: &[&Path],
+) -> &'a Path {
+    let total_len: usize = paths.iter().map(|p| p.as_os_str().len()).sum();
+    if total_len > bytes.len() {
+        // panic!("fuck");
+        let pathbuf = pathbuf.unwrap();
+        for path in paths {
+            pathbuf.push(path);
+        }
+        return pathbuf.as_path();
+    }
+
+    let mut len = 0;
+    for path in paths {
+        let osstr = path.as_os_str().as_bytes();
+        (bytes[len..len + osstr.len()]).copy_from_slice(osstr);
+        len += osstr.len();
+    }
+    let osstr = OsStr::from_bytes(&bytes[..len]);
+    Path::new(osstr)
 }
 fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
     let mcver = MC_VERSION.get_or_init(|| {
-        let pointer = std::ptr::NonNull::new(man).unwrap();
-        let manager = unsafe { ndk::asset::AssetManager::from_ptr(pointer) };
-        get_latest_mcver(manager).unwrap()
+        let ptr = NonNull::new(man).unwrap();
+        let manager = unsafe { AssetManager::from_ptr(ptr) };
+        get_current_mcver(manager)
     });
-    log::warn!("Minecraft version: {mcver}");
-    for version in materialbin::ALL_VERSIONS {
-        let material: CompiledMaterialDefinition = match data.pread_with(0, version) {
+    // Just ignore if no Minecraft version was found
+    let mcver = (*mcver)?;
+    let opts = OPTS.lock().unwrap();
+    for version in opts.autofixer_versions.iter() {
+        let version = *version;
+        let mut material: CompiledMaterialDefinition = match data.pread_with(0, version) {
             Ok(data) => data,
             Err(e) => {
-                log::error!("[{version}] parsing error: {e}");
+                log::trace!("[version] Parsing failed: {e}");
                 continue;
             }
         };
-        log::info!("[{version}]: Parsing had no errors");
-        if version == *mcver {
-            log::info!("the shader does not need updating");
+        let needs_lightmap_fix = IS_1_21_100.load(Ordering::Acquire)
+            && version != MinecraftVersion::V1_21_110
+            && (material.name == "RenderChunk" || material.name == "RenderChunkPrepass")
+            && opts.handle_lightmaps;
+        let needs_sampler_fix = material.name == "RenderChunk"
+            && mcver >= MinecraftVersion::V1_20_80
+            && version <= MinecraftVersion::V1_19_60
+            && opts.handle_texturelods;
+        // Prevent some work
+        if version == mcver && !needs_lightmap_fix && !needs_sampler_fix {
+            log::info!("Did not fix mtbin, mtversion: {version}");
             return None;
         }
+        if needs_lightmap_fix {
+            handle_lightmaps(&mut material);
+            log::warn!("Had to fix lightmaps for RenderChunk");
+        }
+        if needs_sampler_fix {
+            handle_samplers(&mut material);
+        }
         let mut output = Vec::with_capacity(data.len());
-        if let Err(e) = material.write(&mut output, *mcver) {
-            log::error!("Writing failed: {e}");
+        if let Err(e) = material.write(&mut output, mcver) {
+            log::trace!("[version] Write error: {e}");
             return None;
         }
         return Some(output);
     }
-    log::error!("Cant update the shader");
+
     None
 }
+fn handle_lightmaps(materialbin: &mut CompiledMaterialDefinition) {
+    let finder = Finder::new(b"void main");
+    let replace_with = b"
+#define a_texcoord1 vec2(fract(a_texcoord1.x*15.9375)+0.0001,floor(a_texcoord1.x*15.9375)*0.0625+0.0001)
+void main";
+    for (_, pass) in &mut materialbin.passes {
+        for variants in &mut pass.variants {
+            for (stage, code) in &mut variants.shader_codes {
+                if stage.stage == ShaderStage::Vertex {
+                    let blob = &mut code.bgfx_shader_data;
+                    let Ok(mut bgfx) = blob.pread::<BgfxShader>(0) else {
+                        continue;
+                    };
+                    replace_bytes(&mut bgfx.code, &finder, b"void main", replace_with);
+                    blob.clear();
+                    let _unused = bgfx.write(blob);
+                }
+            }
+        }
+    }
+}
+fn handle_samplers(materialbin: &mut CompiledMaterialDefinition) {
+    let pattern = b"void main ()";
+    let replace_with = b"
+#if __VERSION__ >= 300
+ #define texture(tex,uv) textureLod(tex,uv,0.0)
+#else
+ #define texture2D(tex,uv) texture2DLod(tex,uv,0.0)
+#endif
+void main ()";
+    let finder = Finder::new(pattern);
+    for (_passes, pass) in &mut materialbin.passes {
+        if _passes == "AlphaTest" || _passes == "Opaque" {
+            for variants in &mut pass.variants {
+                for (stage, code) in &mut variants.shader_codes {
+                    if stage.stage == ShaderStage::Fragment && stage.platform_name == "ESSL_100" {
+                        log::info!("handle_samplers");
+                        let mut bgfx: BgfxShader = code.bgfx_shader_data.pread(0).unwrap();
+                        replace_bytes(&mut bgfx.code, &finder, pattern, replace_with);
+                        code.bgfx_shader_data.clear();
+                        bgfx.write(&mut code.bgfx_shader_data).unwrap();
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn replace_bytes(codebuf: &mut Vec<u8>, finder: &Finder, pattern: &[u8], replace_with: &[u8]) {
+    let sus = match finder.find(codebuf) {
+        Some(yay) => yay,
+        None => {
+            println!("oops");
+            return;
+        }
+    };
+    codebuf.splice(sus..sus + pattern.len(), replace_with.iter().cloned());
+}
+
 pub(crate) unsafe fn asset_seek64(
     aasset: *mut AAsset,
     off: off64_t,
@@ -152,12 +311,12 @@ pub(crate) unsafe fn asset_read(
         Some(file) => file,
         None => return ndk_sys::AAsset_read(aasset, buf, count),
     };
-    // Avoid a copy and allocation
-    let mut mut_buffer = std::slice::from_raw_parts_mut(buf as *mut u8, count);
-    let read_total = match file.read(&mut mut_buffer) {
+    // Reuse buffer given by caller
+    let rs_buffer = core::slice::from_raw_parts_mut(buf as *mut u8, count);
+    let read_total = match file.read(rs_buffer) {
         Ok(n) => n,
         Err(e) => {
-            log::warn!("fake aasset read failed with: {e}");
+            log::warn!("failed fake aaset read: {e}");
             return -1 as libc::c_int;
         }
     };
@@ -170,7 +329,7 @@ pub(crate) unsafe fn asset_length(aasset: *mut AAsset) -> off_t {
         Some(file) => file,
         None => return ndk_sys::AAsset_getLength(aasset),
     };
-    file.get_ref().len() as off_t
+    file.len().unwrap() as off_t
 }
 
 pub(crate) unsafe fn asset_length64(aasset: *mut AAsset) -> off64_t {
@@ -179,35 +338,32 @@ pub(crate) unsafe fn asset_length64(aasset: *mut AAsset) -> off64_t {
         Some(file) => file,
         None => return ndk_sys::AAsset_getLength64(aasset),
     };
-    file.get_ref().len() as off64_t
+    file.len().unwrap() as off64_t
 }
 
 pub(crate) unsafe fn asset_remaining(aasset: *mut AAsset) -> off_t {
-    let wanted_assets = WANTED_ASSETS.lock().unwrap();
-    let file = match wanted_assets.get(&AAssetPtr(aasset)) {
+    let mut wanted_assets = WANTED_ASSETS.lock().unwrap();
+    let file = match wanted_assets.get_mut(&AAssetPtr(aasset)) {
         Some(file) => file,
         None => return ndk_sys::AAsset_getRemainingLength(aasset),
     };
-    (file.get_ref().len() - file.position() as usize) as off_t
+    file.rem().unwrap() as off_t
 }
 
 pub(crate) unsafe fn asset_remaining64(aasset: *mut AAsset) -> off64_t {
-    let wanted_assets = WANTED_ASSETS.lock().unwrap();
-    let file = match wanted_assets.get(&AAssetPtr(aasset)) {
+    let mut wanted_assets = WANTED_ASSETS.lock().unwrap();
+    let file = match wanted_assets.get_mut(&AAssetPtr(aasset)) {
         Some(file) => file,
         None => return ndk_sys::AAsset_getRemainingLength64(aasset),
     };
-    (file.get_ref().len() - file.position() as usize) as off64_t
+    file.rem().unwrap() as off64_t
 }
 
 pub(crate) unsafe fn asset_close(aasset: *mut AAsset) {
     let mut wanted_assets = WANTED_ASSETS.lock().unwrap();
-    if wanted_assets.remove(&AAssetPtr(aasset)).is_none() {
-        ndk_sys::AAsset_close(aasset);
-    }
+    let _result = wanted_assets.remove(&AAssetPtr(aasset));
+    ndk_sys::AAsset_close(aasset);
 }
-
-// i hate this so much
 
 pub(crate) unsafe fn asset_get_buffer(aasset: *mut AAsset) -> *const libc::c_void {
     let mut wanted_assets = WANTED_ASSETS.lock().unwrap();
@@ -215,9 +371,8 @@ pub(crate) unsafe fn asset_get_buffer(aasset: *mut AAsset) -> *const libc::c_voi
         Some(file) => file,
         None => return ndk_sys::AAsset_getBuffer(aasset),
     };
-    // aughhhhhhhhh
-    // im scared shitless of this
-    file.get_mut().as_mut_ptr().cast()
+    // Lets hope this does not go boom boom
+    file.raw_buffer().unwrap().cast()
 }
 
 pub(crate) unsafe fn asset_fd_dummy(
@@ -227,7 +382,10 @@ pub(crate) unsafe fn asset_fd_dummy(
 ) -> libc::c_int {
     let wanted_assets = WANTED_ASSETS.lock().unwrap();
     match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(_) => -1,
+        Some(_) => {
+            log::error!("WE GOT BUSTED NOOO");
+            -1
+        }
         None => ndk_sys::AAsset_openFileDescriptor(aasset, out_start, out_len),
     }
 }
@@ -239,7 +397,10 @@ pub(crate) unsafe fn asset_fd_dummy64(
 ) -> libc::c_int {
     let wanted_assets = WANTED_ASSETS.lock().unwrap();
     match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(_) => -1,
+        Some(_) => {
+            log::error!("WE GOT BUSTED NOOO");
+            -1
+        }
         None => ndk_sys::AAsset_openFileDescriptor64(aasset, out_start, out_len),
     }
 }
@@ -252,14 +413,14 @@ pub(crate) unsafe fn asset_is_alloc(aasset: *mut AAsset) -> libc::c_int {
     }
 }
 
-fn seek_facade(offset: i64, whence: libc::c_int, file: &mut Cursor<Vec<u8>>) -> i64 {
+fn seek_facade(offset: i64, whence: libc::c_int, file: &mut CowFile) -> i64 {
     let offset = match whence {
         libc::SEEK_SET => {
             //Lets check this so we dont mess up
             let u64_off = match u64::try_from(offset) {
                 Ok(uoff) => uoff,
                 Err(e) => {
-                    log::warn!("Invalid offset for seek_set!, reason: {e}");
+                    log::error!("signed ({offset}) to unsigned failed: {e}");
                     return -1;
                 }
             };
@@ -267,13 +428,70 @@ fn seek_facade(offset: i64, whence: libc::c_int, file: &mut Cursor<Vec<u8>>) -> 
         }
         libc::SEEK_CUR => io::SeekFrom::Current(offset),
         libc::SEEK_END => io::SeekFrom::End(offset),
-        _ => return -1,
+        _ => {
+            log::error!("Invalid seek whence");
+            return -1;
+        }
     };
     match file.seek(offset) {
-        Ok(new_offset) => new_offset.try_into().unwrap(),
+        Ok(new_offset) => match new_offset.try_into() {
+            Ok(int) => int,
+            Err(err) => {
+                log::error!("u64 ({new_offset}) to i64 failed: {err}");
+                -1
+            }
+        },
         Err(err) => {
-            log::warn!("fake aaset seek failed with: {err}");
+            log::error!("aasset seek failed: {err}");
             -1
         }
+    }
+}
+
+// Struct that contains either a file or a buffer to read bytes from
+enum CowFile {
+    File(File),
+    Buffer(Cursor<Vec<u8>>),
+}
+impl Read for CowFile {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Self::File(file) => file.read(buf),
+            Self::Buffer(cursor) => cursor.read(buf),
+        }
+    }
+}
+impl Seek for CowFile {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
+        match self {
+            Self::File(file) => file.seek(pos),
+            Self::Buffer(cursor) => cursor.seek(pos),
+        }
+    }
+}
+impl CowFile {
+    fn len(&self) -> Result<u64, io::Error> {
+        Ok(match self {
+            Self::File(file) => file.metadata()?.len(),
+            Self::Buffer(cursor) => cursor.get_ref().len() as _,
+        })
+    }
+    fn rem(&mut self) -> Result<u64, io::Error> {
+        Ok(self.len()? - self.stream_position()?)
+    }
+    fn raw_buffer(&mut self) -> Result<*mut u8, io::Error> {
+        let len = self.len()? as usize;
+        let mut vec = match self {
+            Self::File(file) => {
+                let mut vec = Vec::with_capacity(len);
+                file.read_to_end(&mut vec)?;
+                vec
+            }
+            Self::Buffer(cursor) => cursor.get_ref().clone(),
+        };
+
+        let ptr = vec.as_mut_ptr();
+        //        std::mem::forget(vec);
+        Ok(ptr)
     }
 }

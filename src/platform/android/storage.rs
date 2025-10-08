@@ -3,16 +3,36 @@ use std::{
     io::{BufRead, BufReader},
     path::Path,
 };
-use thiserror::Error;
-#[derive(Error, Debug)]
+macro_rules! from_error {
+    ($dis:ident, $errorType:ty, $targetError:ty) => {
+        impl From<$errorType> for $targetError {
+            fn from(value: $errorType) -> $targetError {
+                <$targetError>::$dis(value)
+            }
+        }
+    };
+}
+
+#[derive(Debug)]
 pub enum OptionsError {
-    #[error("Options file reading error")]
-    Io(#[from] std::io::Error),
-    #[error("Storage locations int parse error")]
-    IntParse(#[from] std::num::ParseIntError),
-    #[error("Options file parsing error")]
+    //    #[error("Options file reading error")]
+    Io(std::io::Error),
+    //    #[error("Storage locations int parse error")]
+    IntParse(std::num::ParseIntError),
+    //    #[error("Options file parsing error")]
     NotFound,
 }
+impl std::fmt::Display for OptionsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(e) => write!(f, "Options file reading error: {e}"),
+            Self::IntParse(e) => write!(f, "Storage location parse error: {e}"),
+            Self::NotFound => write!(f, "Parse error"),
+        }
+    }
+}
+from_error!(Io, std::io::Error, OptionsError);
+from_error!(IntParse, std::num::ParseIntError, OptionsError);
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum StorageLocation {
     Internal,
