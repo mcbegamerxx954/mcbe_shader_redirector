@@ -219,8 +219,8 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
 }
 fn handle_lightmaps(materialbin: &mut CompiledMaterialDefinition) {
     let finder = Finder::new(b"void main");
-    let finder1 = Finder::new(b"v_lightmapUV = a_texcoord1;");
-    let finder2 = Finder::new(b"v_lightmapUV=a_texcoord1;");
+    // let finder1 = Finder::new(b"v_lightmapUV = a_texcoord1;");
+    // let finder2 = Finder::new(b"v_lightmapUV=a_texcoord1;");
     let finder3 = Finder::new(b"#define a_texcoord1 ");
     let replace_with = b"
 #define a_texcoord1 clamp(vec2( \
@@ -240,12 +240,12 @@ void main";
                     let Ok(mut bgfx) = blob.pread::<BgfxShader>(0) else {
                         continue;
                     };
-                    if finder3.find(&bgfx.code).is_some()
-                        || (finder1.find(&bgfx.code).is_none()
-                            && finder2.find(&bgfx.code).is_none())
-                    {
-                        continue;
-                    };
+                    // if finder3.find(&bgfx.code).is_some()
+                    //     || (finder1.find(&bgfx.code).is_none()
+                    //         && finder2.find(&bgfx.code).is_none())
+                    // {
+                    //     continue;
+                    // };
 
                     replace_bytes(&mut bgfx.code, &finder, b"void main", replace_with);
                     blob.clear();
