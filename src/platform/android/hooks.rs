@@ -217,21 +217,24 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
 
     None
 }
+
 fn handle_lightmaps(materialbin: &mut CompiledMaterialDefinition) {
     let finder = Finder::new(b"void main");
+    // very bad code please help
     // let finder1 = Finder::new(b"v_lightmapUV = a_texcoord1;");
     // let finder2 = Finder::new(b"v_lightmapUV=a_texcoord1;");
+    let finder1 = Finder::new("0.066666670143604278564453125");
+    //    let finder2 = Finder::new("1.0/15.0");
     let finder3 = Finder::new(b"#define a_texcoord1 ");
+    //     let replace_with = b"
+    // #define a_texcoord1 vec2(fract(a_texcoord1.x*15.9375)+0.0001,floor(a_texcoord1.x*15.9375)*0.0625+0.0001)
+    // void main";
     let replace_with = b"
 #define a_texcoord1 clamp(vec2( \
 float(uint(round(a_texcoord1.y * 65535.0)) >> 4u), \
 float(uint(round(a_texcoord1.y * 65535.0)) & 15u) \
 )* 0.066666, 0.0, 1.0)
-void main";
-
-    //     let replace_with = b"
-    // #define a_texcoord1 vec2(fract(a_texcoord1.x*15.9375)+0.0001,floor(a_texcoord1.x*15.9375)*0.0625+0.0001)
-    // void main";
+    void main";
     for (_, pass) in &mut materialbin.passes {
         for variants in &mut pass.variants {
             for (stage, code) in &mut variants.shader_codes {
@@ -240,14 +243,17 @@ void main";
                     let Ok(mut bgfx) = blob.pread::<BgfxShader>(0) else {
                         continue;
                     };
+                    if finder1.find(&bgfx.code).is_some() || finder3.find(&bgfx.code).is_some() {
+                        continue;
+                    }
                     // if finder3.find(&bgfx.code).is_some()
                     //     || (finder1.find(&bgfx.code).is_none()
                     //         && finder2.find(&bgfx.code).is_none())
                     // {
                     //     continue;
                     // };
-
                     replace_bytes(&mut bgfx.code, &finder, b"void main", replace_with);
+
                     blob.clear();
                     let _unused = bgfx.write(blob);
                 }
@@ -255,6 +261,7 @@ void main";
         }
     }
 }
+
 fn handle_samplers(materialbin: &mut CompiledMaterialDefinition) {
     let pattern = b"void main ()";
     let replace_with = b"
