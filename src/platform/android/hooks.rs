@@ -188,7 +188,7 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
             }
         };
         let needs_lightmap_fix = IS_1_21_100.load(Ordering::Acquire)
-            && version != MinecraftVersion::V1_21_110
+//            && version != MinecraftVersion::V1_21_110
             && (material.name == "RenderChunk" || material.name == "RenderChunkPrepass")
             && opts.handle_lightmaps;
         let needs_sampler_fix = material.name == "RenderChunk"
@@ -196,10 +196,10 @@ fn process_material(man: *mut AAssetManager, data: &[u8]) -> Option<Vec<u8>> {
             && version <= MinecraftVersion::V1_19_60
             && opts.handle_texturelods;
         // Prevent some work
-        if version == mcver && !needs_lightmap_fix && !needs_sampler_fix {
-            log::info!("Did not fix mtbin, mtversion: {version}");
-            return None;
-        }
+        // if version == mcver && !needs_lightmap_fix && !needs_sampler_fix {
+        // log::info!("Did not fix mtbin, mtversion: {version}");
+        // return None;
+        // }
         if needs_lightmap_fix {
             handle_lightmaps(&mut material);
             log::warn!("Had to fix lightmaps for RenderChunk");
@@ -222,7 +222,12 @@ fn handle_lightmaps(materialbin: &mut CompiledMaterialDefinition) {
     let finder1 = Finder::new(b"v_lightmapUV = a_texcoord1;");
     let finder2 = Finder::new(b"v_lightmapUV=a_texcoord1;");
     let finder3 = Finder::new(b"#define a_texcoord1 ");
-    let replace_with = b"#define a_texcoord1 vec2(uvec2(uvec2(round(a_texcoord1 * 65535.0)).y >> 4u, uvec2(round(a_texcoord1 * 65535.0)).y) & uvec2(15u,15u)) * vec2_splat(0.066666670143604278564453125);";
+    let replace_with = b"
+#define a_texcoord1 clamp(vec2( \
+float(uint(round(a_texcoord1.y * 65535.0)) >> 4u), \
+float(uint(round(a_texcoord1.y * 65535.0)) & 15u) \
+)* 0.066666, 0.0, 1.0)
+void main";
 
     //     let replace_with = b"
     // #define a_texcoord1 vec2(fract(a_texcoord1.x*15.9375)+0.0001,floor(a_texcoord1.x*15.9375)*0.0625+0.0001)
