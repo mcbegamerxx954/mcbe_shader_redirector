@@ -87,6 +87,9 @@ pub(crate) unsafe fn asset_open(
     let raw_cstr = c_str.to_bytes();
     let os_str = OsStr::from_bytes(raw_cstr);
     let c_path: &Path = Path::new(os_str);
+    let pointer = NonNull::new(man).unwrap();
+    let manager = unsafe { ndk::asset::AssetManager::from_ptr(pointer) };
+
     let Some(os_filename) = c_path.file_name() else {
         log::warn!("Path had no filename: {c_path:?}");
         return aasset;
@@ -127,7 +130,7 @@ pub(crate) unsafe fn asset_open(
                         return aasset;
                     }
                 };
-                let result = match process_material(man, &file) {
+                let result = match process_material(manager, &file) {
                     Some(updated) => updated,
                     None => file,
                 };
