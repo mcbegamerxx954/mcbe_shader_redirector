@@ -31,7 +31,7 @@ unsafe impl Send for AAssetPtr {}
 static WANTED_ASSETS: LazyLock<Mutex<HashMap<AAssetPtr, CowFile>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static MC_VERSION: OnceLock<Option<MinecraftVersion>> = OnceLock::new();
-static IS_1_21_100: AtomicBool = AtomicBool::new(false);
+static MC_IS_1_21_100: AtomicBool = AtomicBool::new(false);
 static MC_IS_1_21_130: AtomicBool = AtomicBool::new(false);
 fn get_current_mcver(man: ndk::asset::AssetManager) -> Option<MinecraftVersion> {
     let mut file = match get_uitext(man) {
