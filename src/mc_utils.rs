@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ffi::{CStr, OsStr};
 use std::fmt::Display;
+use std::hash::Hash;
 use std::ops::Range;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -126,6 +127,13 @@ impl FileName {
         let resource = &osbytes[self.resource_start..];
         let osstr = OsStr::from_bytes(resource);
         Path::new(osstr)
+    }
+}
+impl Hash for FileName {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let osbytes = self.path.as_os_str().as_encoded_bytes();
+        let resource = &osbytes[self.resource_start..];
+        resource.hash(state);
     }
 }
 fn is_interesting(entry: &DirEntry) -> bool {
