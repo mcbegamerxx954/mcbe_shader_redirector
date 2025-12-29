@@ -32,6 +32,8 @@ fn edu_hook(env: jni::JNIEnv, thiz: jni::objects::JObject) -> () = {
         external_path,
     };
     JNI_PATHS.set(paths).unwrap();
+    crate::common::SHOULD_STOP.store(true, std::sync::atomic::Ordering::Release);
+    crate::start_thread();
     self_disable()
 }
 }

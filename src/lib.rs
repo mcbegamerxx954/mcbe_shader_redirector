@@ -36,12 +36,16 @@ fn safe_setup() {
         }
     }
 }
+
 fn startup() {
     log::info!("Starting up!");
     platform::setup_hooks().unwrap();
     log::info!("Finished hooking..");
-
-    std::thread::spawn(|| {
+    start_thread();
+}
+pub fn start_thread() {
+    common::SHOULD_STOP.store(false, std::sync::atomic::Ordering::Release);
+    let _thread = std::thread::spawn(|| {
         let mut path = platform::get_path();
         path.extend(["games", "com.mojang", "minecraftpe"]);
         log::info!("non verified path: {:#?}", &path);
@@ -57,4 +61,5 @@ fn startup() {
 
         common::setup_json_watcher(path);
     });
+    // thread.thread()
 }

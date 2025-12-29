@@ -1,7 +1,10 @@
 use json_strip_comments::{strip_comments_in_place, CommentSettings};
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::ffi::{CStr, OsStr};
 use std::fmt::Display;
+use std::ops::Range;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, io};
 use tinyjson::{JsonParseError, JsonParser, JsonValue};
@@ -104,6 +107,27 @@ fn get_files(path: &Path, file_list: &mut HashMap<PathBuf, PathBuf>) {
     }
     //    files
 }
+struct FileName {
+    path: PathBuf,
+    resource_start: usize,
+}
+impl FileName {
+    fn new(path: PathBuf, prefix: &Path) -> Option<Self> {
+        let fnnuy = path.strip_prefix(prefix).ok()?;
+        let bytes = fnnuy.as_os_str().as_encoded_bytes();
+        let resource_start = bytes.len();
+        Some(Self {
+            path,
+            resource_start,
+        })
+    }
+    fn resource_name(&self) -> &Path {
+        let osbytes = self.path.as_os_str().as_encoded_bytes();
+        let resource = &osbytes[self.resource_start..];
+        let osstr = OsStr::from_bytes(resource);
+        Path::new(osstr)
+    }
+}
 fn is_interesting(entry: &DirEntry) -> bool {
     if entry.depth() == 1 {
         return entry.file_name() == "renderer"
@@ -205,11 +229,14 @@ impl DataManager {
     fn get_installed_packs(&self) -> Result<Vec<ValidPack>, DataError> {
         let pack_dirs = fs::read_dir(&self.resourcepacks_dir)?;
         let mut packs = Vec::new();
-        for pack in pack_dirs.flatten() {
-            let manifest_path = match find_pack_folder(&pack.path()) {
+        for dir in pack_dirs.flatten() {
+            if !dir.file_type()?.is_dir() {
+                continue;
+            }
+            let manifest_path = match find_pack_folder(&dir.path()) {
                 Some(found) => found,
                 None => {
-                    log::warn!("Cannot find pack manifest for dir: {:?}", pack.path());
+                    log::warn!("Cannot find pack manifest for dir: {:?}", dir.path());
                     continue;
                 }
             };
