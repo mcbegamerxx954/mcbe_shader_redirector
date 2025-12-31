@@ -3,14 +3,16 @@ mod hooking;
 mod mc_utils;
 mod platform;
 //use once_cell::sync::Lazy;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
-static SHADER_PATHS: LazyLock<Mutex<HashMap<PathBuf, PathBuf>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+use crate::mc_utils::ResourcePath;
+
+static SHADER_PATHS: LazyLock<Mutex<HashSet<ResourcePath<'static>>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 // A quick startpoint for the library, mostly there because
 // unwinding up here is ub, + give a good panic message

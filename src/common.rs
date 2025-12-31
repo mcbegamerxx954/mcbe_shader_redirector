@@ -64,7 +64,7 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
         }
     }
 }
-fn update_global_sp(dataman: &mut DataManager) {
+fn update_global_sp<'guh>(dataman: &'guh mut DataManager) {
     let mut locked_sp = SHADER_PATHS.lock().unwrap_or_else(|err| err.into_inner());
     //        .expect("The shader paths lock should never be poisoned");
     let data = match dataman.shader_paths() {
@@ -74,8 +74,9 @@ fn update_global_sp(dataman: &mut DataManager) {
             return;
         }
     };
+    // drop(dataman);
     *locked_sp = data;
-    log::info!("Updated global shader paths: {:#?}", &locked_sp);
+    // log::info!("Updated global shader paths: {:#?}", &locked_sp);
 }
 fn startup_load(dataman: &mut DataManager) {
     log::info!("Trying to load files eagerly");

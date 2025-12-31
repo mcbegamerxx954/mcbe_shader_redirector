@@ -1,6 +1,7 @@
 use json_strip_comments::{strip_comments_in_place, CommentSettings};
+use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, OsStr};
 use std::fmt::Display;
 use std::hash::Hash;
@@ -84,58 +85,97 @@ impl ValidPack {
             version: version.unwrap(),
         })
     }
-    pub fn get_pack_files(&self, subpack: Option<String>) -> HashMap<PathBuf, PathBuf> {
-        let mut list = HashMap::new();
-        get_files(&self.path, &mut list);
+    pub fn get_pack_files(&self, subpack: Option<String>, set: &mut HashSet<ResourcePath>) {
+        // We add the subpack first as it has priority over main pack
         if let Some(subpack) = subpack {
             let mut path = self.path.to_path_buf();
             path.extend(["subpacks", &subpack]);
-            get_files(&path, &mut list);
+            get_files(&path, set);
             //            files.extend(subpack_files);
         }
-        list
+        // Any files that the subpack has will override these
+        get_files(&self.path, set);
     }
 }
 
-fn get_files(path: &Path, file_list: &mut HashMap<PathBuf, PathBuf>) {
+fn get_files(path: &Path, file_list: &mut HashSet<ResourcePath>) {
     let walker = walkdir::WalkDir::new(path);
     let iter = walker.into_iter().filter_entry(is_interesting).flatten();
     //    let mut files = HashMap::new();
     for entry in iter {
         let curr_path = entry.into_path();
-        let resource_name = curr_path.strip_prefix(path).unwrap();
-        file_list.insert(resource_name.to_path_buf(), curr_path);
+        let Some(resource_path) = ResourcePath::new(curr_path, &path) else {
+            continue;
+        };
+        file_list.insert(resource_path);
     }
     //    files
 }
-struct FileName {
-    path: PathBuf,
-    resource_start: usize,
+
+fn wrapping_sub_ptr<T>(lhs: *const T, rhs: *const T) -> usize {
+    let pointee_size = std::mem::size_of::<T>();
+    (lhs as usize - rhs as usize) / pointee_size
 }
-impl FileName {
-    fn new(path: PathBuf, prefix: &Path) -> Option<Self> {
-        let fnnuy = path.strip_prefix(prefix).ok()?;
-        let bytes = fnnuy.as_os_str().as_encoded_bytes();
-        let resource_start = bytes.len();
-        Some(Self {
+
+pub fn range_of<T>(outer: &[T], inner: &[T]) -> Option<Range<usize>> {
+    let outer = outer.as_ptr_range();
+    let inner = inner.as_ptr_range();
+    if outer.start <= inner.start && inner.end <= outer.end {
+        Some(wrapping_sub_ptr(inner.start, outer.start)..wrapping_sub_ptr(inner.end, outer.start))
+    } else {
+        None
+    }
+}
+
+pub struct ResourcePath<'a> {
+    path: Cow<'a, Path>,
+    resource_start: Range<usize>,
+}
+impl<'a> ResourcePath<'a> {
+    pub fn new_nameless(path: Cow<'a, Path>) -> Self {
+        let len = path.as_os_str().as_bytes().len();
+        Self {
             path,
-            resource_start,
+            resource_start: 0..len,
+        }
+    }
+    pub fn new(path: PathBuf, prefix: &Path) -> Option<Self> {
+        let strip = path.strip_prefix(prefix).ok()?;
+        let bytes = path.as_os_str().as_encoded_bytes();
+        let range = range_of(bytes, strip.as_os_str().as_bytes())?;
+        Some(Self {
+            path: Cow::Owned(path),
+            resource_start: range,
         })
     }
-    fn resource_name(&self) -> &Path {
+    pub fn path(&self) -> &Path {
+        self.path.as_ref()
+    }
+    pub fn resource_name(&self) -> &Path {
         let osbytes = self.path.as_os_str().as_encoded_bytes();
-        let resource = &osbytes[self.resource_start..];
+        let resource = &osbytes[self.resource_start.clone()];
         let osstr = OsStr::from_bytes(resource);
         Path::new(osstr)
     }
 }
-impl Hash for FileName {
+impl<'a> Hash for ResourcePath<'a> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         let osbytes = self.path.as_os_str().as_encoded_bytes();
-        let resource = &osbytes[self.resource_start..];
+        let resource = &osbytes[self.resource_start.clone()];
         resource.hash(state);
     }
 }
+// Spoiler: This is Bullshit
+impl<'a> PartialEq for ResourcePath<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.resource_name() == other.resource_name()
+    }
+    fn ne(&self, other: &Self) -> bool {
+        self.resource_name() != other.resource_name()
+    }
+}
+impl<'a> Eq for ResourcePath<'a> {}
+//impl Eq for ResourcePath {}
 fn is_interesting(entry: &DirEntry) -> bool {
     if entry.depth() == 1 {
         return entry.file_name() == "renderer"
@@ -218,18 +258,18 @@ impl DataManager {
     }
 
     // Get a list of shader paths
-    pub fn shader_paths(&self) -> Result<HashMap<PathBuf, PathBuf>, DataError> {
+    pub fn shader_paths<'a>(&self) -> Result<HashSet<ResourcePath<'a>>, DataError> {
         let global_packs: Vec<GlobalPack> = GlobalPack::parse(&self.active_packs_path)?;
         log::info!("global_packs parsed: {:#?}", global_packs);
         let packs = self.get_installed_packs()?;
         log::info!("Installed packs: {packs:#?}");
-        let mut final_paths = HashMap::new();
+        let mut final_paths = HashSet::new();
         // Explanation: we use .rev to reverse the iterator since this way we can avoid
         // some checks
         for pack in global_packs.into_iter().rev() {
             if let Some(vp) = find_valid_pack(&pack, &packs) {
-                let paths = vp.get_pack_files(pack.subpack);
-                final_paths.extend(paths);
+                // We pass the hashset directly to avoid useless allocations that get dropped instantly
+                vp.get_pack_files(pack.subpack, &mut final_paths);
             }
         }
         Ok(final_paths)

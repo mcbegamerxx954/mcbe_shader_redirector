@@ -1,5 +1,5 @@
-use crate::platform::OPTS;
 use crate::SHADER_PATHS;
+use crate::{mc_utils::ResourcePath, platform::OPTS};
 use libc::{off64_t, off_t};
 use materialbin::{
     bgfx_shader::BgfxShader,
@@ -7,7 +7,7 @@ use materialbin::{
     CompiledMaterialDefinition, MinecraftVersion,
 };
 use memchr::memmem::Finder;
-use std::{ptr::NonNull, sync::atomic::Ordering};
+use std::{borrow::Cow, ptr::NonNull, sync::atomic::Ordering};
 //use ndk::asset::Asset;
 use ndk::asset::{Asset, AssetManager};
 use ndk_sys::{AAsset, AAssetManager};
@@ -114,8 +114,9 @@ pub(crate) unsafe fn asset_open(
                 Some(&mut planb),
                 &[Path::new(replacement.1), path],
             );
+            let aah = ResourcePath::new_nameless(Cow::Borrowed(path));
             // Try to get the file
-            let filepath = match shader_paths.get(path) {
+            let filepath = match shader_paths.get(&aah) {
                 Some(path) => path,
                 None => {
                     log::info!("Cannot load file: {:?}", path);
@@ -123,7 +124,7 @@ pub(crate) unsafe fn asset_open(
                 }
             };
             let buffer = if os_filename.as_encoded_bytes().ends_with(b".material.bin") {
-                let file = match std::fs::read(filepath) {
+                let file = match std::fs::read(filepath.path()) {
                     Ok(file) => file,
                     Err(err) => {
                         log::info!("Cannot open shader file: {err}");
@@ -136,7 +137,7 @@ pub(crate) unsafe fn asset_open(
                 };
                 CowFile::Buffer(Cursor::new(result))
             } else {
-                let file = match File::open(filepath) {
+                let file = match File::open(filepath.path()) {
                     Ok(file) => file,
                     Err(err) => {
                         log::warn!("Cannot open file: {err}");
