@@ -9,6 +9,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 
+use thread_priority::ThreadBuilderExt;
+
 use crate::mc_utils::ResourcePath;
 
 static SHADER_PATHS: LazyLock<Mutex<HashSet<ResourcePath<'static>>>> =
@@ -47,21 +49,22 @@ fn startup() {
 }
 pub fn start_thread() {
     common::SHOULD_STOP.store(false, std::sync::atomic::Ordering::Release);
-    let _thread = std::thread::spawn(|| {
-        let mut path = platform::get_path();
-        path.extend(["games", "com.mojang", "minecraftpe"]);
-        log::info!("non verified path: {:#?}", &path);
-        if !path.exists() {
-            if let Err(e) = fs::create_dir_all(&path) {
-                log::error!("Fatal: path to minecraftpe cant be created: {e}");
-                log::error!("Quitting..");
-                return;
+    let _thread = std::thread::Builder::new()
+        .name("Draco FileObserver".to_string())
+        .spawn_with_priority(thread_priority::ThreadPriority::Min, |_| {
+            let mut path = platform::get_path();
+            path.extend(["games", "com.mojang", "minecraftpe"]);
+            log::info!("non verified path: {:#?}", &path);
+            if !path.exists() {
+                if let Err(e) = fs::create_dir_all(&path) {
+                    log::error!("Fatal: path to minecraftpe cant be created: {e}");
+                    log::error!("Quitting..");
+                    return;
+                }
             }
-        }
-        log::debug!("path is: {:#?}", &path);
-        // we do it here so mcbe stays sleep while we work
-
-        common::setup_json_watcher(path);
-    });
+            log::debug!("path is: {:#?}", &path);
+            // we do it here so mcbe stays sleep while we work
+            common::setup_json_watcher(path);
+        });
     // thread.thread()
 }

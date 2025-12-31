@@ -25,6 +25,7 @@ notify = "8.0.0"
 bhook = "0.1.2"
 ndk = "0.9.0"
 memchr = "2.7.5"
+thread-priority = "3.0.0"
 
 
 
