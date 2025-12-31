@@ -67,7 +67,7 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
 fn update_global_sp<'guh>(dataman: &'guh mut DataManager) {
     let time = Instant::now();
 
-    //        .expect("The shader paths lock should never be poisoned");
+    let mut locked_sp = SHADER_PATHS.lock().unwrap_or_else(|err| err.into_inner()); //        .expect("The shader paths lock should never be poisoned");
     let data = match dataman.shader_paths() {
         Ok(spaths) => spaths,
         Err(e) => {
@@ -78,7 +78,6 @@ fn update_global_sp<'guh>(dataman: &'guh mut DataManager) {
     // drop(dataman);
     //
 
-    let mut locked_sp = SHADER_PATHS.lock().unwrap_or_else(|err| err.into_inner());
     *locked_sp = data;
     log::info!(
         "Updated global shader paths in {}ms...",
