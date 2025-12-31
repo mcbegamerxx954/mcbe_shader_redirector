@@ -58,7 +58,7 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
         };
 
         // This means that Minecraft has changed or read the resource list, let's do it too
-        if file_name == "global_resource_packs.json" {
+        if file_name == "global_resource_packs.json" && event.kind.is_modify() {
             log::info!("Active rpacks changed, updating..");
             update_global_sp(&mut data_manager);
         }
