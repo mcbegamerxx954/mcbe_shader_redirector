@@ -82,7 +82,7 @@ fn update_global_sp<'guh>(dataman: &'guh mut DataManager) {
     *locked_sp = data;
     log::info!(
         "Updated global shader paths in {}s...",
-        time.elapsed().as_secs()
+        time.elapsed().as_millis()
     );
 }
 fn startup_load(dataman: &mut DataManager) {
