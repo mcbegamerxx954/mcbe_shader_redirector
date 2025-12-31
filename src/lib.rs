@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
+use std::time::Instant;
 
 use thread_priority::ThreadBuilderExt;
 
@@ -43,8 +44,9 @@ fn safe_setup() {
 
 fn startup() {
     log::info!("Starting up!");
+    let time = Instant::now();
     platform::setup_hooks().unwrap();
-    log::info!("Finished hooking..");
+    log::info!("Finished hooking in {} ms...", time.elapsed().as_millis());
     start_thread();
 }
 pub fn start_thread() {

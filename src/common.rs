@@ -5,7 +5,7 @@ use crate::SHADER_PATHS;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 pub static SHOULD_STOP: AtomicBool = AtomicBool::new(false);
 pub(crate) fn setup_json_watcher(path: PathBuf) {
     let current_location = match get_storage_location(&path.join("options.txt")) {
@@ -65,7 +65,8 @@ pub(crate) fn setup_json_watcher(path: PathBuf) {
     }
 }
 fn update_global_sp<'guh>(dataman: &'guh mut DataManager) {
-    let mut locked_sp = SHADER_PATHS.lock().unwrap_or_else(|err| err.into_inner());
+    let time = Instant::now();
+
     //        .expect("The shader paths lock should never be poisoned");
     let data = match dataman.shader_paths() {
         Ok(spaths) => spaths,
@@ -75,8 +76,14 @@ fn update_global_sp<'guh>(dataman: &'guh mut DataManager) {
         }
     };
     // drop(dataman);
+    //
+
+    let mut locked_sp = SHADER_PATHS.lock().unwrap_or_else(|err| err.into_inner());
     *locked_sp = data;
-    // log::info!("Updated global shader paths: {:#?}", &locked_sp);
+    log::info!(
+        "Updated global shader paths in {} ms...",
+        time.elapsed().as_micros()
+    );
 }
 fn startup_load(dataman: &mut DataManager) {
     log::info!("Trying to load files eagerly");
