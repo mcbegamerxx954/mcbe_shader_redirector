@@ -9,23 +9,31 @@ jobs:
       matrix:
         target: 
           - aarch64-linux-android
-          - armv7-linux-androideabi
           - x86_64-linux-android
           - i686-linux-android
+          - armv7-linux-androideabi
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust
         run: rustup update stable
-      - name: Install cross-compilation tools
-        uses: taiki-e/setup-cross-toolchain-action@v1
-        with:
-          target: ${{ matrix.target }} 
+      - name: Setup Cache
+        uses: Swatinem/rust-cache@v2  
+      - name: Get version
+        id: get-version
+        run: |
+          echo "version=$(rustc --version)" >> $GITHUB_OUTPUT
+        shell: bash
+      - name: Install cargo ndk
+        run: cargo install cargo-ndk
+        shell: bash  
+      - name: Install target
+        run: rustup target add ${{matrix.target}}
       - name: build
-        run: cargo build --release
+        run: cargo ndk -t ${{matrix.target}} build --profile githubci 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mcbe_r-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/libmcbe_r.so
+          path: target/${{ matrix.target }}/githubci/libmcbe_r.so
 

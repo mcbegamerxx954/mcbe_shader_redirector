@@ -10,9 +10,9 @@ jobs:
     strategy:
       matrix:
         target: 
-          - aarch64-linux-android
-          - armv7-linux-androideabi
           - x86_64-linux-android
+          - aarch64-linux-android          
+          - armv7-linux-androideabi
           - i686-linux-android
     runs-on: ubuntu-latest
     permissions:
@@ -26,9 +26,10 @@ jobs:
         with:
           target: ${{ matrix.target }} 
       - name: build
-        run: cargo build --release
+        run: cargo build --profile githubci
         env:
           CARGO_PROFILE_RELEASE_LTO: "fat"
+          CARGO_PROFILE_RELEASE_STRIP: "symbols"
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
       - name: Build Changelog
         id: github_release
@@ -67,7 +68,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Prepare lib for release
-        run: mv target/${{ matrix.target }}/release/libmcbe_r.so libmcbe_r_${{ matrix.target }}.so
+        run: mv target/${{ matrix.target }}/githubci/libmcbe_r.so libmcbe_r_${{ matrix.target }}.so
       - name: Create Release
         uses: mikepenz/action-gh-release@v0.2.0-a03 #softprops/action-gh-release
         with:

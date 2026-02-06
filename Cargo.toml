@@ -18,14 +18,14 @@ jni = "0.21.1"
 plt-rs = "0.3.0"
 libloading = "0.8.5"
 page_size = "0.6.0"
-json-strip-comments = "1.0.4"
-tinyjson = "2.5.1"
+# json-strip-comments = "1.0.4"
 ctor = { version = "0.4.1", default-features = false }
 notify = "8.0.0"
 bhook = "0.1.2"
 ndk = "0.9.0"
 memchr = "2.7.5"
 thread-priority = "3.0.0"
+struson = "0.6.0"
 
 
 

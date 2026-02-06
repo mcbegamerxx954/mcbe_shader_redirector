@@ -1,15 +1,19 @@
-use json_strip_comments::{strip_comments_in_place, CommentSettings};
+// use json_strip_comments::{strip_comments_in_place, CommentSettings};
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, OsStr};
 use std::fmt::Display;
+use std::fs::File;
 use std::hash::Hash;
+use std::num::ParseIntError;
 use std::ops::Range;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::{fmt, fs, io};
-use tinyjson::{JsonParseError, JsonParser, JsonValue};
+use struson::json_path;
+use struson::reader::{JsonReader, JsonStreamReader, ReaderError, ReaderSettings};
+// use tinyjson::{JsonParseError, JsonParser, JsonValue};
 use walkdir::DirEntry;
 // Keeps track and manages data about the minecraft Resource Pack Structure
 #[derive(Debug)]
@@ -23,20 +27,9 @@ pub struct DataManager {
 pub struct ValidPack {
     uuid: String,
     path: PathBuf,
-    version: Vec<f64>,
+    version: Vec<u32>,
 }
-#[derive(Debug)]
-pub enum PackParseError {
-    //    #[error("Manifest parsing error")]
-    JsonParse(JsonParseError),
-    //    #[error("Io error while reading")]
-    IoError(std::io::Error),
-    //    #[error("Manifest is not valid")]
-    InvalidManifest,
-    //    CommentStrip(json_strip_comments::Erro)
-    //    #[error("Error while parsing version")]
-    //    VersionParse(std::num::ParseIntError),
-}
+
 macro_rules! from_error {
     ($dis:ident, $errorType:ty, $targetError:ty) => {
         impl From<$errorType> for $targetError {
@@ -47,41 +40,71 @@ macro_rules! from_error {
     };
 }
 from_error!(IoError, std::io::Error, PackParseError);
-from_error!(JsonParse, JsonParseError, PackParseError);
+from_error!(JsonParse, ReaderError, PackParseError);
+from_error!(VersionParse, ParseIntError, PackParseError);
 impl Display for PackParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::JsonParse(e) => write!(f, "Manifest parsing error {e}"),
             Self::IoError(e) => write!(f, "Io error while reading: {e}"),
             Self::InvalidManifest => write!(f, "Manifest file is not valid"),
-            // Self::VersionParse(e) => write!(f, "Failed parsing version: {e}"),
+            Self::VersionParse(e) => write!(f, "Failed parsing version: {e}"),
         }
     }
 }
 
+#[derive(Debug)]
+pub enum PackParseError {
+    //    #[error("Manifest parsing error")]
+    JsonParse(struson::reader::ReaderError),
+    //    #[error("Io error while reading")]
+    IoError(std::io::Error),
+    //    #[error("Manifest is not valid")]
+    InvalidManifest,
+    //    #[error("Error while parsing version")]
+    VersionParse(std::num::ParseIntError),
+}
 impl ValidPack {
     // We do not use serde because it is much more strict
     // than bedrock in terms of json parsing
     fn parse_manifest(pack_path: PathBuf) -> Result<Self, PackParseError> {
-        let mut manifest = fs::read_to_string(pack_path.join("manifest.json"))?;
-        strip_comments_in_place(&mut manifest, CommentSettings::c_style(), true)?;
-        let mut json = tinyjson::JsonParser::new(manifest.chars()).parse()?;
-
-        let header = match json.get_value_mut("header") {
-            Some(yay) => yay,
-            None => return Err(PackParseError::InvalidManifest),
-        };
-        let uuid = header.get_value_mut("uuid").and_then(|u| u.get_string());
-        let version = header
-            .get_value_mut("version")
-            .and_then(|v| v.get_array())
-            .and_then(|mut a| a.iter_mut().map(|v| v.get_number()).collect());
+        let manifest = File::open(pack_path.join("manifest.json"))?;
+        let mut settings = ReaderSettings::default();
+        settings.allow_comments = true;
+        let mut json = JsonStreamReader::new_custom(manifest, settings);
+        json.seek_to(&json_path!["header"])?;
+        json.begin_object()?;
+        let mut uuid = None;
+        let mut version = None;
+        loop {
+            match json.next_name()? {
+                "uuid" => uuid = Some(json.next_string()?),
+                "version" => {
+                    json.begin_array()?;
+                    let mut numbers: Vec<u32> = Vec::new();
+                    while json.has_next()? {
+                        let workaround = json.next_number()?;
+                        numbers.push(workaround?);
+                    }
+                    json.end_array()?;
+                    version = Some(numbers);
+                }
+                _ => {
+                    json.skip_value()?;
+                }
+            }
+            if !json.has_next()? {
+                break;
+            }
+        }
+        json.end_object()?;
         if uuid.is_none() || version.is_none() {
             return Err(PackParseError::InvalidManifest);
         }
         Ok(Self {
             uuid: uuid.unwrap(),
             path: pack_path,
+
             version: version.unwrap(),
         })
     }
@@ -190,28 +213,48 @@ fn is_interesting(entry: &DirEntry) -> bool {
 struct GlobalPack {
     pack_id: String,
     subpack: Option<String>,
-    version: Vec<f64>,
+    version: Vec<u32>,
 }
 impl GlobalPack {
     fn parse(path: &Path) -> Result<Vec<Self>, DataError> {
-        let data = fs::read_to_string(path)?;
-        let mut json = JsonParser::new(data.chars()).parse()?;
-        let mut objects = match json.get_array() {
-            Some(yay) => yay,
-            None => return Err(DataError::InvalidData("array")),
-        };
-        objects
-            .iter_mut()
-            .map(|v| GlobalPack::parse_one(v))
-            .collect()
+        let manifest = File::open(path)?;
+        let mut settings = ReaderSettings::default();
+        settings.allow_comments = true;
+        let mut json = JsonStreamReader::new_custom(manifest, settings);
+        json.begin_array()?;
+        let mut global_packs = Vec::new();
+        while json.has_next()? {
+            json.begin_object()?;
+            global_packs.push(GlobalPack::parse_one(&mut json)?);
+            json.end_object()?;
+        }
+        json.end_array()?;
+        Ok(global_packs)
     }
-    fn parse_one(val: &mut JsonValue) -> Result<Self, DataError> {
-        let pack_id = val.get_value_mut("pack_id").and_then(|v| v.get_string());
-        let subpack = val.get_value_mut("subpack").and_then(|v| v.get_string());
-        let version = val
-            .get_value_mut("version")
-            .and_then(|v| v.get_array())
-            .and_then(|mut a| a.iter_mut().map(|v| v.get_number()).collect());
+    fn parse_one(json: &mut impl JsonReader) -> Result<Self, DataError> {
+        let mut pack_id = None;
+        let mut subpack = None;
+        let mut version = None;
+        while json.has_next()? {
+            match json.next_name()? {
+                "pack_id" => pack_id = Some(json.next_string()?),
+                "subpack" => subpack = Some(json.next_string()?),
+                "version" => {
+                    json.begin_array()?;
+                    let mut numbers: Vec<u32> = Vec::new();
+                    while json.has_next()? {
+                        let workaround = json.next_number()?;
+                        numbers.push(workaround?);
+                    }
+                    json.end_array()?;
+                    version = Some(numbers);
+                }
+                _ => {
+                    json.skip_value()?;
+                }
+            }
+        }
+
         let Some(pack_id) = pack_id else {
             return Err(DataError::InvalidData("id"));
         };
@@ -229,8 +272,9 @@ impl GlobalPack {
 #[derive(Debug)]
 pub enum DataError {
     InvalidData(&'static str),
-    JsonParse(JsonParseError),
+    JsonParse(ReaderError),
     IoError(io::Error),
+    IntConvert(ParseIntError),
     ManifestParse(PackParseError),
 }
 impl Display for DataError {
@@ -241,13 +285,15 @@ impl Display for DataError {
             }
             Self::JsonParse(e) => write!(f, "Data file parsing error: {e}"),
             Self::IoError(e) => write!(f, "Io error while reading data: {e}"),
+            Self::IntConvert(e) => write!(f, "Error wgile parsing int: {e}"),
             Self::ManifestParse(e) => write!(f, "Error while parsing manifest file: {e}"),
         }
     }
 }
 from_error!(IoError, io::Error, DataError);
 from_error!(ManifestParse, PackParseError, DataError);
-from_error!(JsonParse, JsonParseError, DataError);
+from_error!(JsonParse, ReaderError, DataError);
+from_error!(IntConvert, ParseIntError, DataError);
 impl DataManager {
     // Get minecraft paths and create itself
     pub fn init_data(json_path: PathBuf, resourcepacks_path: PathBuf) -> Self {
@@ -339,47 +385,4 @@ fn compare(entry1: &DirEntry, entry2: &DirEntry) -> Ordering {
         return Ordering::Equal;
     }
     Ordering::Equal
-}
-
-trait ValGetters {
-    fn get_value_mut(&mut self, val_name: &str) -> Option<&mut JsonValue>;
-    fn get_string(&mut self) -> Option<String>;
-    fn get_array(&mut self) -> Option<Vec<JsonValue>>;
-    fn get_number(&self) -> Option<f64>;
-}
-impl ValGetters for JsonValue {
-    fn get_value_mut(&mut self, str: &str) -> Option<&mut JsonValue> {
-        let object = match self {
-            JsonValue::Object(o) => o,
-            _ => return None,
-        };
-        match object.get_mut(str) {
-            Some(h) => Some(h),
-            None => None,
-        }
-    }
-    // For efficiency, this will obliverate the value to return it
-    fn get_string(&mut self) -> Option<String> {
-        let object = match self {
-            JsonValue::String(o) => o,
-            _ => return None,
-        };
-        Some(std::mem::take(object))
-    }
-
-    // For efficiency, this will obliverate the value to return it
-    fn get_array(&mut self) -> Option<Vec<JsonValue>> {
-        let object = match self {
-            JsonValue::Array(o) => o,
-            _ => return None,
-        };
-        Some(std::mem::take(object))
-    }
-
-    fn get_number(&self) -> Option<f64> {
-        match self {
-            JsonValue::Number(o) => Some(*o),
-            _ => None,
-        }
-    }
 }

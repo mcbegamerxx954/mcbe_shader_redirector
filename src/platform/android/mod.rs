@@ -4,10 +4,13 @@ pub mod storage;
 
 use self::storage::{parse_storage_location, StorageLocation};
 use super::errors::HookError;
-use libc::c_void;
+use libc::{c_char, c_void, fopen, FILE};
 use libloading::{Library, Symbol};
+// use openvfs::FileProvider;
 use plt_rs::{collect_modules, DynamicLibrary};
 
+use std::ffi::{CStr, OsStr};
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -90,9 +93,18 @@ pub fn get_storage_path(location: StorageLocation) -> std::path::PathBuf {
 pub fn get_path() -> std::path::PathBuf {
     get_storage_path(StorageLocation::Internal)
 }
+pub unsafe fn fake_fopen(name: *const c_char, mode: *const c_char) -> *mut FILE {
+    let cname = CStr::from_ptr(name);
+    let osstr = OsStr::from_bytes(cname.to_bytes());
+    let guh = Path::new(osstr);
+    fopen(name, mode)
+}
 // Setup asset hooks
 pub fn setup_hooks() -> Result<(), HookError> {
     const LIBNAME: &str = "libminecraftpe.so";
+    // let huh = modutils::Module::find(LIBNAME);
+    // openvfs::register_provider(huh);
+
     let lib_entry = match find_lib(LIBNAME) {
         Some(lib) => lib,
         None => return Err(HookError::MissingLib(LIBNAME.to_string())),
