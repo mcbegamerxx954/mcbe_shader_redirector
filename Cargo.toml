@@ -27,9 +27,16 @@ memchr = "2.7.5"
 thread-priority = "3.0.0"
 struson = "0.6.0"
 
+[profile.release]
+panic = "abort"
 
-
-
+[profile.githubci]
+inherits = "release"
+strip = true
+lto = true
+codegen-units = 1
+debug = false
+panic = "abort"
 
 [lib]
 crate-type = ["cdylib"]
