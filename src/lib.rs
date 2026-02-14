@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, LockResult, Mutex};
 use std::time::Instant;
 
 use thread_priority::ThreadBuilderExt;
@@ -69,4 +69,16 @@ pub fn start_thread() {
             common::setup_json_watcher(path);
         });
     // thread.thread()
+}
+
+pub trait LockResultExt {
+    type Guard;
+    fn ignore_poison(self) -> Self::Guard;
+}
+
+impl<Guard> LockResultExt for LockResult<Guard> {
+    type Guard = Guard;
+    fn ignore_poison(self) -> Guard {
+        self.unwrap_or_else(|e| e.into_inner())
+    }
 }
