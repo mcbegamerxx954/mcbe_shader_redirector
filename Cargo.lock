@@ -22,8 +22,7 @@ dependencies = [
 [[package]]
 name = "bhook"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2878cdfdead620502495f314ecda640f8af72796dd56b617c005d1044aff5996"
+source = "git+https://github.com/mcbegamerxx954/bhook#2e44c9c898e715feff8ee61291d74ced2c7f20a0"
 dependencies = [
  "clear-cache",
  "region",
