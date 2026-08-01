@@ -2,8 +2,11 @@ mod hooks;
 pub mod storage;
 //use crate::hooking::{setup_hook, unsetup_hook};
 
+use crate::LockResultExt;
+
 use self::storage::{parse_storage_location, StorageLocation};
 use super::errors::HookError;
+use jni::objects::JByteArray;
 use libc::{c_char, c_void, fopen, FILE};
 use libloading::{Library, Symbol};
 // use openvfs::FileProvider;
@@ -11,7 +14,7 @@ use plt_rs::{collect_modules, DynamicLibrary};
 
 use std::ffi::{CStr, OsStr};
 use std::os::unix::ffi::OsStrExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -227,6 +230,30 @@ impl Default for Options {
             autofixer_versions: ALL_VERSIONS.to_vec(),
         }
     }
+}
+struct FaFaFile {
+    name: PathBuf,
+    data: Vec<u8>,
+}
+pub static mut FAFAFILES: Mutex<Vec<FaFaFile>> = Mutex::new(Vec::new());
+#[no_mangle]
+extern "C" fn Java_io_bambosan_mbloader_launcherUtils_LibBindings_addCustomFile(
+    mut env: JNIEnv,
+    _this: JObject,
+    res_name: JString,
+    res_data: JByteArray,
+) {
+    let mut sus = unsafe { FAFAFILES.lock().ignore_poison() };
+    let name_pt1 = env.get_string(&res_name).unwrap();
+    let name = name_pt1.to_str().unwrap();
+    //    let len = env.get_array_length(&res_data).unwrap();
+    let array = env.convert_byte_array(&res_data).unwrap();
+    let fafa = FaFaFile {
+        name: PathBuf::from(name.to_owned()),
+        // TODO: pllsss fixx tsss
+        data: array,
+    };
+    sus.push(fafa);
 }
 pub static OPTS: LazyLock<Mutex<Options>> = LazyLock::new(|| Mutex::new(Options::default()));
 #[no_mangle]

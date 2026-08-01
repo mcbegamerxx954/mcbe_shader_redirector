@@ -1,3 +1,4 @@
+use crate::platform::FAFAFILES;
 use crate::SHADER_PATHS;
 use crate::{mc_utils::ResourcePath, platform::OPTS};
 use libc::{off64_t, off_t};
@@ -56,6 +57,14 @@ pub(crate) unsafe fn asset_open(
         ("resource_packs/vanilla/cameras", "vanilla_cameras/"),
         ("skin_packs/persona", "custom_persona/"),
     ];
+    let files = FAFAFILES.lock().ignore_poison();
+    let file = files.iter().find(|d| d.name == stripped_path);
+    if let Some(fafafile) = file {
+        let data = Cursor::new(fafafile.data.clone());
+        let data = CowFile::Buffer(data);
+        let mut lock = WANTED_ASSETS.lock().ignore_poison();
+        lock.insert(AAssetPtr(aasset), data);
+    }
     for replacement in replacement_list {
         if let Ok(path) = stripped_path.strip_prefix(replacement.0) {
             let shader_paths = SHADER_PATHS.lock().unwrap();
